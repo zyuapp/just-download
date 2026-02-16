@@ -1,0 +1,17 @@
+{
+  "name": "just-download",
+  "version": "1.0.0",
+  "main": "src/main/main.js",
+  "scripts": {
+    "start": "electron .",
+    "dev": "electron ."
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": "A simple download manager with multipart download and pause/resume",
+  "dependencies": {
+    "electron-store": "^11.0.2",
+    "uuid": "^13.0.0"
+  }
+}

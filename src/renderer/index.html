@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'">
+  <title>Just Download</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="app-container">
+    <header class="header">
+      <button id="add-btn" class="add-btn" title="Add URL">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <line x1="12" y1="5" x2="12" y2="19"></line>
+          <line x1="5" y1="12" x2="19" y2="12"></line>
+        </svg>
+      </button>
+      <h1 class="title">Just Download</h1>
+    </header>
+
+    <div id="url-dialog" class="url-dialog hidden">
+      <input type="text" id="url-input" class="url-input" placeholder="Enter download URL...">
+      <button id="start-download" class="start-btn">Download</button>
+      <button id="cancel-dialog" class="cancel-btn">Cancel</button>
+    </div>
+
+    <main class="download-list" id="download-list">
+      <div class="empty-state" id="empty-state">
+        <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1">
+          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+          <polyline points="7 10 12 15 17 10"></polyline>
+          <line x1="12" y1="15" x2="12" y2="3"></line>
+        </svg>
+        <p>No downloads yet</p>
+        <p class="hint">Click + to add a URL</p>
+      </div>
+    </main>
+  </div>
+
+  <div id="context-menu" class="context-menu hidden">
+    <div class="context-menu-item" data-action="open">Open</div>
+    <div class="context-menu-item" data-action="open-folder">Open Folder</div>
+    <div class="context-menu-divider"></div>
+    <div class="context-menu-item" data-action="remove">Remove from List</div>
+    <div class="context-menu-item danger" data-action="delete">Delete File</div>
+  </div>
+
+  <script src="renderer.js"></script>
+</body>
+</html>
