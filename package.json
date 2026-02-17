@@ -8,6 +8,7 @@
   "scripts": {
     "start": "npm run -w @just-download/desktop start",
     "dev": "npm run -w @just-download/desktop dev",
+    "package:mac": "npm run -w @just-download/desktop package:mac",
     "build": "lage build --allow-no-target-runs",
     "test": "lage test --allow-no-target-runs",
     "lint": "lage lint --allow-no-target-runs"

@@ -16,6 +16,39 @@ const {
 const PART_COUNT = 4;
 const PROGRESS_SYNC_INTERVAL_MS = 250;
 
+const APP_ICON_SVG = `
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" fill="none">
+  <defs>
+    <linearGradient id="icon-bg" x1="80" y1="64" x2="432" y2="448" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#2A56F5" />
+      <stop offset="0.52" stop-color="#1E9CFF" />
+      <stop offset="1" stop-color="#23D3A8" />
+    </linearGradient>
+    <linearGradient id="icon-glyph" x1="256" y1="132" x2="256" y2="382" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#FFFFFF" />
+      <stop offset="1" stop-color="#DFF1FF" />
+    </linearGradient>
+    <filter id="icon-shadow" x="106" y="100" width="300" height="310" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="14" stdDeviation="14" flood-color="#07204A" flood-opacity="0.28" />
+    </filter>
+  </defs>
+  <rect x="40" y="40" width="432" height="432" rx="120" fill="url(#icon-bg)" />
+  <path d="M112 78C189 46 322 43 401 95C427 112 446 137 457 166V40H40V157C55 126 80 95 112 78Z" fill="#FFFFFF" fill-opacity="0.14" />
+  <g filter="url(#icon-shadow)">
+    <path d="M256 132C272.569 132 286 145.431 286 162V285.758L332.787 238.971C344.502 227.256 363.498 227.256 375.213 238.971C386.929 250.687 386.929 269.683 375.213 281.398L277.213 379.398C265.498 391.114 246.502 391.114 234.787 379.398L136.787 281.398C125.071 269.683 125.071 250.687 136.787 238.971C148.502 227.256 167.498 227.256 179.213 238.971L226 285.758V162C226 145.431 239.431 132 256 132Z" fill="url(#icon-glyph)" />
+    <rect x="156" y="350" width="200" height="34" rx="17" fill="#FFFFFF" fill-opacity="0.92" />
+    <rect x="171" y="359" width="170" height="16" rx="8" fill="#2F67F0" fill-opacity="0.28" />
+  </g>
+</svg>
+`.trim();
+
+const TRAY_TEMPLATE_ICON_SVG = `
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none">
+  <path d="M12 3.75C12 3.33579 11.6642 3 11.25 3C10.8358 3 10.5 3.33579 10.5 3.75V11.9393L7.28033 8.71967C6.98744 8.42678 6.51256 8.42678 6.21967 8.71967C5.92678 9.01256 5.92678 9.48744 6.21967 9.78033L10.7197 14.2803C11.0126 14.5732 11.4874 14.5732 11.7803 14.2803L16.2803 9.78033C16.5732 9.48744 16.5732 9.01256 16.2803 8.71967C15.9874 8.42678 15.5126 8.42678 15.2197 8.71967L12 11.9393V3.75Z" fill="#000000" />
+  <path d="M4.5 15.75C4.08579 15.75 3.75 16.0858 3.75 16.5C3.75 16.9142 4.08579 17.25 4.5 17.25H19.5C19.9142 17.25 20.25 16.9142 20.25 16.5C20.25 16.0858 19.9142 15.75 19.5 15.75H4.5Z" fill="#000000" />
+</svg>
+`.trim();
+
 const STATUS = {
   DOWNLOADING: 'downloading',
   PAUSED: 'paused',
@@ -166,6 +199,27 @@ function clearProgressSync(downloadId) {
     clearTimeout(timer);
     progressTimers.delete(downloadId);
   }
+}
+
+function svgToDataUrl(svgContent) {
+  return `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svgContent)}`;
+}
+
+function createIconFromSvg(svgContent, size) {
+  const icon = nativeImage.createFromDataURL(svgToDataUrl(svgContent));
+  if (!icon || icon.isEmpty()) {
+    return null;
+  }
+
+  if (Number.isFinite(size) && size > 0) {
+    return icon.resize({ width: size, height: size, quality: 'best' });
+  }
+
+  return icon;
+}
+
+function createAppIcon(size = 256) {
+  return createIconFromSvg(APP_ICON_SVG, size);
 }
 
 function sumDownloadedBytes(parts) {
@@ -792,12 +846,15 @@ async function openFolder(downloadId) {
 }
 
 function createWindow() {
+  const appIcon = createAppIcon(256);
+
   mainWindow = new BrowserWindow({
     width: 900,
     height: 620,
     minWidth: 520,
     minHeight: 420,
     backgroundColor: '#1a1a2e',
+    icon: appIcon || undefined,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -820,9 +877,21 @@ function createWindow() {
 }
 
 function createTrayIcon() {
+  if (process.platform === 'darwin') {
+    const templateIcon = createIconFromSvg(TRAY_TEMPLATE_ICON_SVG, 18);
+    if (templateIcon && !templateIcon.isEmpty()) {
+      templateIcon.setTemplateImage(true);
+      return templateIcon;
+    }
+  }
+
+  const appIcon = createAppIcon(20);
+  if (appIcon && !appIcon.isEmpty()) {
+    return appIcon;
+  }
+
   const fallbackDataUrl = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO6p4eEAAAAASUVORK5CYII=';
-  const icon = nativeImage.createFromDataURL(fallbackDataUrl);
-  return icon;
+  return nativeImage.createFromDataURL(fallbackDataUrl);
 }
 
 function createTray() {
@@ -925,6 +994,14 @@ app.whenReady().then(async () => {
 
   await initializeStore();
   registerIpcHandlers();
+
+  if (process.platform === 'darwin' && app.dock) {
+    const dockIcon = createAppIcon(256);
+    if (dockIcon && !dockIcon.isEmpty()) {
+      app.dock.setIcon(dockIcon);
+    }
+  }
+
   createWindow();
   createTray();
 
