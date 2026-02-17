@@ -4,8 +4,9 @@
   "main": "dist/main/main.js",
   "scripts": {
     "clean": "node -e \"require('fs').rmSync('dist', { recursive: true, force: true })\"",
-    "copy:assets": "node -e \"const fs=require('fs');fs.mkdirSync('dist/renderer',{recursive:true});fs.copyFileSync('src/renderer/index.html','dist/renderer/index.html');fs.copyFileSync('src/renderer/styles.css','dist/renderer/styles.css');\"",
-    "build": "npm run clean && tsc -p tsconfig.json && npm run copy:assets",
+    "copy:assets": "node -e \"const fs=require('fs');fs.mkdirSync('dist/renderer',{recursive:true});fs.copyFileSync('src/renderer/index.html','dist/renderer/index.html');\"",
+    "build:css": "tailwindcss -i src/renderer/styles.css -o dist/renderer/styles.css",
+    "build": "npm run clean && tsc -p tsconfig.json && npm run copy:assets && npm run build:css",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "start": "npm run dev",
     "dev": "npm run build && electron ."
@@ -20,6 +21,7 @@
   "devDependencies": {
     "@types/node": "^24.9.0",
     "electron": "^40.4.1",
+    "tailwindcss": "^3.4.19",
     "typescript": "^5.7.3"
   }
 }

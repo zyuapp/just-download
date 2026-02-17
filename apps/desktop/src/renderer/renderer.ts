@@ -43,6 +43,12 @@ const THEME_LIGHT: Theme = 'light';
 const THEME_STORAGE_KEY = 'just-download:theme';
 const DEFAULT_THEME: Theme = THEME_DARK;
 
+const DOWNLOAD_ITEM_BASE_CLASS = 'download-item rounded-[12px] border border-[var(--border)] bg-[var(--surface-strong)] p-[13px] shadow-[var(--shadow-card)] transition-[transform,border-color,background-color] duration-150 ease-out hover:-translate-y-px hover:border-[var(--border-strong)] hover:bg-[var(--surface-hover)]';
+const DOWNLOAD_INFO_CLASS = 'mb-[7px] flex items-start justify-between gap-[10px] max-[760px]:flex-col max-[760px]:items-start';
+const FILENAME_CLASS = 'flex-1 break-words text-[14px] font-[620] text-[var(--text-title)]';
+const PROGRESS_TRACK_CLASS = 'h-[9px] overflow-hidden rounded-full border border-[color-mix(in_srgb,var(--border)_76%,transparent)] bg-[var(--progress-track)]';
+const PROGRESS_TEXT_CLASS = 'mt-[6px] text-[11px] uppercase tracking-[0.04em] text-[var(--text-faint)]';
+
 function getAPI(): ElectronAPI {
   if (!window.electronAPI) {
     throw new Error('Failed to initialize app bridge.');
@@ -144,7 +150,7 @@ function getActionsMarkup(download: DownloadRecord): string {
 
   const pauseOrResume = download.status === 'downloading'
     ? `
-      <button class="action-btn pause-btn" data-action="pause" title="Pause">
+      <button class="action-btn" data-action="pause" title="Pause">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
           <rect x="6" y="4" width="4" height="16"></rect>
           <rect x="14" y="4" width="4" height="16"></rect>
@@ -152,7 +158,7 @@ function getActionsMarkup(download: DownloadRecord): string {
       </button>
     `
     : `
-      <button class="action-btn resume-btn" data-action="resume" title="Resume">
+      <button class="action-btn" data-action="resume" title="Resume">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
           <polygon points="5 3 19 12 5 21 5 3"></polygon>
         </svg>
@@ -160,9 +166,9 @@ function getActionsMarkup(download: DownloadRecord): string {
     `;
 
   return `
-    <div class="download-actions">
+    <div class="mt-[11px] flex gap-2">
       ${pauseOrResume}
-      <button class="action-btn cancel-action-btn" data-action="cancel" title="Cancel">
+      <button class="action-btn" data-action="cancel" title="Cancel">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <line x1="18" y1="6" x2="6" y2="18"></line>
           <line x1="6" y1="6" x2="18" y2="18"></line>
@@ -174,33 +180,34 @@ function getActionsMarkup(download: DownloadRecord): string {
 
 function createDownloadItem(download: DownloadRecord): HTMLElement {
   const item = document.createElement('article');
-  item.className = `download-item state-${download.status || 'unknown'}`;
+  const statusValue = download.status || 'unknown';
+  item.className = DOWNLOAD_ITEM_BASE_CLASS;
   item.dataset.id = download.id;
+  item.dataset.status = statusValue;
 
   const progress = getProgress(download);
   const totalLabel = download.totalBytes > 0 ? formatBytes(download.totalBytes) : 'Unknown';
-  const statusClass = `status-${download.status || 'unknown'}`;
   const errorText = download.status === 'error' && download.error
     ? `<p class="download-error">${escapeHtml(download.error)}</p>`
     : '';
 
   item.innerHTML = `
-    <div class="download-info">
-      <span class="filename" title="${escapeHtml(download.filename)}">${escapeHtml(download.filename)}</span>
-      <span class="status ${statusClass}">${statusLabel(download)}</span>
+    <div class="${DOWNLOAD_INFO_CLASS}">
+      <span class="${FILENAME_CLASS}" title="${escapeHtml(download.filename)}">${escapeHtml(download.filename)}</span>
+      <span class="status-chip" data-status="${statusValue}">${statusLabel(download)}</span>
     </div>
-    <div class="progress-container">
-      <div class="progress-bar">
-        <div class="progress-fill" style="width: ${progress}%"></div>
+    <div class="mt-[8px]">
+      <div class="${PROGRESS_TRACK_CLASS}">
+        <div class="progress-fill" data-status="${statusValue}" style="width: ${progress}%"></div>
       </div>
-      <div class="progress-text">${formatBytes(download.downloadedBytes)} / ${totalLabel}</div>
+      <div class="${PROGRESS_TEXT_CLASS}">${formatBytes(download.downloadedBytes)} / ${totalLabel}</div>
     </div>
     ${errorText}
     ${getActionsMarkup(download)}
   `;
 
   if (download.status === 'completed') {
-    item.classList.add('download-item-completed');
+    item.classList.add('cursor-pointer');
 
     item.addEventListener('dblclick', async () => {
       try {
@@ -254,11 +261,11 @@ function renderDownloads(): void {
   const sorted = [...state.downloads].sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
 
   if (sorted.length === 0) {
-    empty.style.display = 'flex';
+    empty.classList.remove('hidden');
     return;
   }
 
-  empty.style.display = 'none';
+  empty.classList.add('hidden');
   for (const download of sorted) {
     list.appendChild(createDownloadItem(download));
   }
