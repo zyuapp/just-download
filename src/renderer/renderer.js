@@ -1,167 +1,36 @@
-const { electronAPI } = window;
+const state = {
+  downloads: [],
+  contextTargetId: null,
+  unsubscribeDownloads: null
+};
 
-let downloads = [];
-let contextMenuTarget = null;
-
-const addBtn = document.getElementById('add-btn');
-const urlDialog = document.getElementById('url-dialog');
-const urlInput = document.getElementById('url-input');
-const startDownloadBtn = document.getElementById('start-download');
-const cancelDialogBtn = document.getElementById('cancel-dialog');
-const downloadList = document.getElementById('download-list');
-const emptyState = document.getElementById('empty-state');
-const contextMenu = document.getElementById('context-menu');
-
-addBtn.addEventListener('click', () => {
-  urlDialog.classList.remove('hidden');
-  urlInput.focus();
-});
-
-cancelDialogBtn.addEventListener('click', () => {
-  urlDialog.classList.add('hidden');
-  urlInput.value = '';
-});
-
-startDownloadBtn.addEventListener('click', async () => {
-  const url = urlInput.value.trim();
-  if (url) {
-    try {
-      await electronAPI.startDownload(url);
-      urlDialog.classList.add('hidden');
-      urlInput.value = '';
-    } catch (error) {
-      alert('Failed to start download: ' + error.message);
-    }
-  }
-});
-
-urlInput.addEventListener('keydown', (e) => {
-  if (e.key === 'Enter') {
-    startDownloadBtn.click();
-  } else if (e.key === 'Escape') {
-    cancelDialogBtn.click();
-  }
-});
-
-document.addEventListener('click', (e) => {
-  if (!contextMenu.contains(e.target)) {
-    contextMenu.classList.add('hidden');
-  }
-});
-
-contextMenu.addEventListener('click', async (e) => {
-  const action = e.target.dataset.action;
-  if (!action || !contextMenuTarget) return;
-
-  const id = contextMenuTarget;
-
-  switch (action) {
-    case 'open':
-      await electronAPI.openFile(id);
-      break;
-    case 'open-folder':
-      await electronAPI.openFolder(id);
-      break;
-    case 'remove':
-      await electronAPI.removeDownload(id);
-      break;
-    case 'delete':
-      await electronAPI.deleteDownload(id);
-      break;
-  }
-
-  contextMenu.classList.add('hidden');
-  contextMenuTarget = null;
-});
+const elements = {
+  addButton: null,
+  urlDialog: null,
+  urlInput: null,
+  startButton: null,
+  cancelButton: null,
+  downloadList: null,
+  emptyState: null,
+  contextMenu: null
+};
 
 function formatBytes(bytes) {
-  if (bytes === 0) return '0 B';
-  const k = 1024;
-  const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
-  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
-}
+  if (!Number.isFinite(bytes) || bytes <= 0) {
+    return '0 B';
+  }
 
-function createDownloadItem(download) {
-  const item = document.createElement('div');
-  item.className = 'download-item';
-  item.dataset.id = download.id;
+  const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+  let size = bytes;
+  let unitIndex = 0;
 
-  const progress = download.totalBytes > 0
-    ? Math.round((download.downloadedBytes / download.totalBytes) * 100)
-    : 0;
+  while (size >= 1024 && unitIndex < units.length - 1) {
+    size /= 1024;
+    unitIndex += 1;
+  }
 
-  const statusClass = download.status === 'error' ? 'error' : download.status === 'completed' ? 'completed' : '';
-
-  item.innerHTML = `
-    <div class="download-info">
-      <span class="filename">${escapeHtml(download.filename)}</span>
-      <span class="status ${statusClass}">${download.status}</span>
-    </div>
-    <div class="progress-container">
-      <div class="progress-bar">
-        <div class="progress-fill" style="width: ${progress}%"></div>
-      </div>
-      <div class="progress-text">
-        ${formatBytes(download.downloadedBytes)} / ${download.totalBytes > 0 ? formatBytes(download.totalBytes) : 'Unknown'}
-      </div>
-    </div>
-    <div class="download-actions">
-      ${download.status === 'downloading' ? `
-        <button class="action-btn pause-btn" data-action="pause" title="Pause">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
-            <rect x="6" y="4" width="4" height="16"></rect>
-            <rect x="14" y="4" width="4" height="16"></rect>
-          </svg>
-        </button>
-      ` : ''}
-      ${download.status === 'paused' ? `
-        <button class="action-btn resume-btn" data-action="resume" title="Resume">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
-            <polygon points="5 3 19 12 5 21 5 3"></polygon>
-          </svg>
-        </button>
-      ` : ''}
-      <button class="action-btn cancel-btn" data-action="cancel" title="Cancel">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <line x1="18" y1="6" x2="6" y2="18"></line>
-          <line x1="6" y1="6" x2="18" y2="18"></line>
-        </svg>
-      </button>
-    </div>
-  `;
-
-  item.addEventListener('dblclick', async () => {
-    if (download.status === 'completed') {
-      await electronAPI.openFile(download.id);
-    }
-  });
-
-  item.addEventListener('contextmenu', (e) => {
-    if (download.status === 'completed') {
-      e.preventDefault();
-      contextMenuTarget = download.id;
-      contextMenu.style.left = e.clientX + 'px';
-      contextMenu.style.top = e.clientY + 'px';
-      contextMenu.classList.remove('hidden');
-    }
-  });
-
-  item.querySelectorAll('.action-btn').forEach(btn => {
-    btn.addEventListener('click', async (e) => {
-      e.stopPropagation();
-      const action = btn.dataset.action;
-      if (action === 'pause') {
-        await electronAPI.pauseDownload(download.id);
-      } else if (action === 'resume') {
-        await electronAPI.resumeDownload(download.id);
-      } else if (action === 'cancel') {
-        await electronAPI.cancelDownload(download.id);
-      }
-    });
-  });
-
-  return item;
+  const rounded = unitIndex === 0 ? Math.round(size) : size.toFixed(2);
+  return `${rounded} ${units[unitIndex]}`;
 }
 
 function escapeHtml(text) {
@@ -170,33 +39,308 @@ function escapeHtml(text) {
   return div.innerHTML;
 }
 
-function renderDownloads() {
-  const existingItems = downloadList.querySelectorAll('.download-item');
-  existingItems.forEach(item => item.remove());
+function statusLabel(download) {
+  switch (download.status) {
+    case 'downloading':
+      return 'Downloading';
+    case 'paused':
+      return 'Paused';
+    case 'completed':
+      return 'Completed';
+    case 'error':
+      return 'Error';
+    default:
+      return download.status || 'Unknown';
+  }
+}
 
-  if (downloads.length === 0) {
-    emptyState.style.display = 'flex';
-  } else {
-    emptyState.style.display = 'none';
-    downloads.forEach(download => {
-      downloadList.appendChild(createDownloadItem(download));
+function getProgress(download) {
+  if (!Number.isFinite(download.totalBytes) || download.totalBytes <= 0) {
+    return 0;
+  }
+
+  const value = Math.round((download.downloadedBytes / download.totalBytes) * 100);
+  return Math.max(0, Math.min(value, 100));
+}
+
+function getActionsMarkup(download) {
+  if (download.status === 'completed') {
+    return '';
+  }
+
+  const pauseOrResume = download.status === 'downloading'
+    ? `
+      <button class="action-btn pause-btn" data-action="pause" title="Pause">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+          <rect x="6" y="4" width="4" height="16"></rect>
+          <rect x="14" y="4" width="4" height="16"></rect>
+        </svg>
+      </button>
+    `
+    : `
+      <button class="action-btn resume-btn" data-action="resume" title="Resume">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+          <polygon points="5 3 19 12 5 21 5 3"></polygon>
+        </svg>
+      </button>
+    `;
+
+  return `
+    <div class="download-actions">
+      ${pauseOrResume}
+      <button class="action-btn cancel-action-btn" data-action="cancel" title="Cancel">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <line x1="18" y1="6" x2="6" y2="18"></line>
+          <line x1="6" y1="6" x2="18" y2="18"></line>
+        </svg>
+      </button>
+    </div>
+  `;
+}
+
+function createDownloadItem(download) {
+  const item = document.createElement('article');
+  item.className = 'download-item';
+  item.dataset.id = download.id;
+
+  const progress = getProgress(download);
+  const totalLabel = download.totalBytes > 0 ? formatBytes(download.totalBytes) : 'Unknown';
+  const statusClass = `status-${download.status || 'unknown'}`;
+  const errorText = download.status === 'error' && download.error
+    ? `<p class="download-error">${escapeHtml(download.error)}</p>`
+    : '';
+
+  item.innerHTML = `
+    <div class="download-info">
+      <span class="filename" title="${escapeHtml(download.filename)}">${escapeHtml(download.filename)}</span>
+      <span class="status ${statusClass}">${statusLabel(download)}</span>
+    </div>
+    <div class="progress-container">
+      <div class="progress-bar">
+        <div class="progress-fill" style="width: ${progress}%"></div>
+      </div>
+      <div class="progress-text">${formatBytes(download.downloadedBytes)} / ${totalLabel}</div>
+    </div>
+    ${errorText}
+    ${getActionsMarkup(download)}
+  `;
+
+  if (download.status === 'completed') {
+    item.classList.add('download-item-completed');
+
+    item.addEventListener('dblclick', async () => {
+      try {
+        await window.electronAPI.openFile(download.id);
+      } catch (error) {
+        const message = error && error.message ? error.message : 'Unable to open file.';
+        window.alert(message);
+      }
+    });
+
+    item.addEventListener('contextmenu', (event) => {
+      event.preventDefault();
+      showContextMenu(download.id, event.clientX, event.clientY);
     });
   }
+
+  item.querySelectorAll('.action-btn').forEach((button) => {
+    button.addEventListener('click', async (event) => {
+      event.stopPropagation();
+
+      const action = button.dataset.action;
+      try {
+        if (action === 'pause') {
+          await window.electronAPI.pauseDownload(download.id);
+        } else if (action === 'resume') {
+          await window.electronAPI.resumeDownload(download.id);
+        } else if (action === 'cancel') {
+          await window.electronAPI.cancelDownload(download.id);
+        }
+      } catch (error) {
+        const message = error && error.message ? error.message : 'Action failed.';
+        window.alert(message);
+      }
+    });
+  });
+
+  return item;
 }
 
-async function loadDownloads() {
-  downloads = await electronAPI.getDownloads();
-  renderDownloads();
-}
+function renderDownloads() {
+  const list = elements.downloadList;
+  const empty = elements.emptyState;
 
-electronAPI.onDownloadUpdate((updatedDownload) => {
-  const index = downloads.findIndex(d => d.id === updatedDownload.id);
-  if (index >= 0) {
-    downloads[index] = updatedDownload;
-  } else {
-    downloads.push(updatedDownload);
+  if (!list || !empty) {
+    return;
   }
+
+  list.querySelectorAll('.download-item').forEach((node) => node.remove());
+
+  const sorted = [...state.downloads].sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+
+  if (sorted.length === 0) {
+    empty.style.display = 'flex';
+    return;
+  }
+
+  empty.style.display = 'none';
+  for (const download of sorted) {
+    list.appendChild(createDownloadItem(download));
+  }
+}
+
+function showUrlDialog() {
+  elements.urlDialog.classList.remove('hidden');
+  elements.urlInput.focus();
+  elements.urlInput.select();
+}
+
+function hideUrlDialog() {
+  elements.urlDialog.classList.add('hidden');
+  elements.urlInput.value = '';
+}
+
+async function startDownloadFromInput() {
+  const value = elements.urlInput.value.trim();
+  if (!value) {
+    return;
+  }
+
+  try {
+    elements.startButton.disabled = true;
+    await window.electronAPI.startDownload(value);
+    hideUrlDialog();
+  } catch (error) {
+    const message = error && error.message ? error.message : 'Unable to start download.';
+    window.alert(message);
+  } finally {
+    elements.startButton.disabled = false;
+  }
+}
+
+function showContextMenu(downloadId, x, y) {
+  state.contextTargetId = downloadId;
+
+  const menu = elements.contextMenu;
+  menu.classList.remove('hidden');
+
+  const viewportWidth = window.innerWidth;
+  const viewportHeight = window.innerHeight;
+  const rect = menu.getBoundingClientRect();
+
+  const left = Math.min(x, viewportWidth - rect.width - 8);
+  const top = Math.min(y, viewportHeight - rect.height - 8);
+
+  menu.style.left = `${Math.max(8, left)}px`;
+  menu.style.top = `${Math.max(8, top)}px`;
+}
+
+function hideContextMenu() {
+  state.contextTargetId = null;
+  elements.contextMenu.classList.add('hidden');
+}
+
+async function handleContextMenuAction(action) {
+  if (!state.contextTargetId) {
+    return;
+  }
+
+  const id = state.contextTargetId;
+
+  if (action === 'open') {
+    await window.electronAPI.openFile(id);
+  } else if (action === 'open-folder') {
+    await window.electronAPI.openFolder(id);
+  } else if (action === 'remove') {
+    await window.electronAPI.removeDownload(id);
+  } else if (action === 'delete') {
+    await window.electronAPI.deleteDownload(id);
+  }
+}
+
+async function refreshDownloads() {
+  const current = await window.electronAPI.getDownloads();
+  state.downloads = Array.isArray(current) ? current : [];
   renderDownloads();
+}
+
+function bindEvents() {
+  elements.addButton.addEventListener('click', showUrlDialog);
+  elements.cancelButton.addEventListener('click', hideUrlDialog);
+  elements.startButton.addEventListener('click', startDownloadFromInput);
+
+  elements.urlInput.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter') {
+      void startDownloadFromInput();
+    } else if (event.key === 'Escape') {
+      hideUrlDialog();
+    }
+  });
+
+  document.addEventListener('click', (event) => {
+    if (!elements.contextMenu.contains(event.target)) {
+      hideContextMenu();
+    }
+  });
+
+  elements.contextMenu.addEventListener('click', async (event) => {
+    const action = event.target.dataset.action;
+    if (!action) {
+      return;
+    }
+
+    try {
+      await handleContextMenuAction(action);
+    } catch (error) {
+      const message = error && error.message ? error.message : 'Action failed.';
+      window.alert(message);
+    } finally {
+      hideContextMenu();
+    }
+  });
+}
+
+function cacheElements() {
+  elements.addButton = document.getElementById('add-btn');
+  elements.urlDialog = document.getElementById('url-dialog');
+  elements.urlInput = document.getElementById('url-input');
+  elements.startButton = document.getElementById('start-download');
+  elements.cancelButton = document.getElementById('cancel-dialog');
+  elements.downloadList = document.getElementById('download-list');
+  elements.emptyState = document.getElementById('empty-state');
+  elements.contextMenu = document.getElementById('context-menu');
+}
+
+async function initialize() {
+  cacheElements();
+
+  const missingElement = Object.entries(elements).find(([, value]) => !value);
+  if (missingElement) {
+    window.alert(`Failed to initialize UI: missing element ${missingElement[0]}.`);
+    return;
+  }
+
+  if (!window.electronAPI) {
+    window.alert('Failed to initialize app bridge.');
+    return;
+  }
+
+  bindEvents();
+
+  state.unsubscribeDownloads = window.electronAPI.onDownloadsChanged((nextDownloads) => {
+    state.downloads = Array.isArray(nextDownloads) ? nextDownloads : [];
+    renderDownloads();
+  });
+
+  await refreshDownloads();
+}
+
+window.addEventListener('DOMContentLoaded', () => {
+  void initialize();
 });
 
-loadDownloads();
+window.addEventListener('beforeunload', () => {
+  if (typeof state.unsubscribeDownloads === 'function') {
+    state.unsubscribeDownloads();
+  }
+});

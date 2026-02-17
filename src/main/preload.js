@@ -5,12 +5,20 @@ contextBridge.exposeInMainWorld('electronAPI', {
   pauseDownload: (id) => ipcRenderer.invoke('download:pause', id),
   resumeDownload: (id) => ipcRenderer.invoke('download:resume', id),
   cancelDownload: (id) => ipcRenderer.invoke('download:cancel', id),
-  openFile: (id) => ipcRenderer.invoke('download:open', id),
-  openFolder: (id) => ipcRenderer.invoke('download:open-folder', id),
   removeDownload: (id) => ipcRenderer.invoke('download:remove', id),
   deleteDownload: (id) => ipcRenderer.invoke('download:delete', id),
+  openFile: (id) => ipcRenderer.invoke('download:open', id),
+  openFolder: (id) => ipcRenderer.invoke('download:open-folder', id),
   getDownloads: () => ipcRenderer.invoke('downloads:get'),
-  onDownloadUpdate: (callback) => {
-    ipcRenderer.on('download:update', (event, data) => callback(data));
+  onDownloadsChanged: (callback) => {
+    const listener = (_event, payload) => {
+      callback(payload);
+    };
+
+    ipcRenderer.on('downloads:changed', listener);
+
+    return () => {
+      ipcRenderer.removeListener('downloads:changed', listener);
+    };
   }
 });
