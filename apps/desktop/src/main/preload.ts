@@ -1,6 +1,8 @@
-const { contextBridge, ipcRenderer } = require('electron');
+import { contextBridge, ipcRenderer } from 'electron';
 
-contextBridge.exposeInMainWorld('electronAPI', {
+import type { DownloadRecord, ElectronAPI } from '../shared/types';
+
+const electronAPI: ElectronAPI = {
   startDownload: (url) => ipcRenderer.invoke('download:start', url),
   pauseDownload: (id) => ipcRenderer.invoke('download:pause', id),
   resumeDownload: (id) => ipcRenderer.invoke('download:resume', id),
@@ -11,7 +13,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   openFolder: (id) => ipcRenderer.invoke('download:open-folder', id),
   getDownloads: () => ipcRenderer.invoke('downloads:get'),
   onDownloadsChanged: (callback) => {
-    const listener = (_event, payload) => {
+    const listener = (_event: Electron.IpcRendererEvent, payload: DownloadRecord[]) => {
       callback(payload);
     };
 
@@ -21,4 +23,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.removeListener('downloads:changed', listener);
     };
   }
-});
+};
+
+contextBridge.exposeInMainWorld('electronAPI', electronAPI);

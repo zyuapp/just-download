@@ -1,10 +1,14 @@
 {
   "name": "@just-download/desktop",
   "version": "1.0.0",
-  "main": "src/main/main.js",
+  "main": "dist/main/main.js",
   "scripts": {
-    "start": "electron .",
-    "dev": "electron ."
+    "clean": "node -e \"require('fs').rmSync('dist', { recursive: true, force: true })\"",
+    "copy:assets": "node -e \"const fs=require('fs');fs.mkdirSync('dist/renderer',{recursive:true});fs.copyFileSync('src/renderer/index.html','dist/renderer/index.html');fs.copyFileSync('src/renderer/styles.css','dist/renderer/styles.css');\"",
+    "build": "npm run clean && tsc -p tsconfig.json && npm run copy:assets",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "start": "npm run dev",
+    "dev": "npm run build && electron ."
   },
   "keywords": [],
   "author": "",
@@ -14,6 +18,8 @@
     "electron-store": "^11.0.2"
   },
   "devDependencies": {
-    "electron": "^40.4.1"
+    "@types/node": "^24.9.0",
+    "electron": "^40.4.1",
+    "typescript": "^5.7.3"
   }
 }

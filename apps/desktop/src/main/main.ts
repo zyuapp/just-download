@@ -488,7 +488,7 @@ async function downloadPart(download, part, runtime) {
     return;
   }
 
-  const headers = {};
+  const headers = {} as Record<string, string>;
   if (canResumeWithRange) {
     if (hasBoundedEnd) {
       headers.Range = `bytes=${startOffset}-${part.end}`;

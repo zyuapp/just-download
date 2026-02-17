@@ -1,11 +1,32 @@
-const state = {
+type Theme = 'dark' | 'light';
+
+interface RendererState {
+  downloads: DownloadRecord[];
+  contextTargetId: string | null;
+  unsubscribeDownloads: (() => void) | null;
+  theme: Theme | null;
+}
+
+interface ElementsState {
+  addButton: HTMLButtonElement | null;
+  urlDialog: HTMLElement | null;
+  urlInput: HTMLInputElement | null;
+  startButton: HTMLButtonElement | null;
+  cancelButton: HTMLButtonElement | null;
+  downloadList: HTMLElement | null;
+  emptyState: HTMLElement | null;
+  contextMenu: HTMLElement | null;
+  themeToggle: HTMLButtonElement | null;
+}
+
+const state: RendererState = {
   downloads: [],
   contextTargetId: null,
   unsubscribeDownloads: null,
   theme: null
 };
 
-const elements = {
+const elements: ElementsState = {
   addButton: null,
   urlDialog: null,
   urlInput: null,
@@ -17,17 +38,24 @@ const elements = {
   themeToggle: null
 };
 
-const THEME_DARK = 'dark';
-const THEME_LIGHT = 'light';
+const THEME_DARK: Theme = 'dark';
+const THEME_LIGHT: Theme = 'light';
 const THEME_STORAGE_KEY = 'just-download:theme';
-const DEFAULT_THEME = THEME_DARK;
+const DEFAULT_THEME: Theme = THEME_DARK;
 
-function getNextTheme(theme) {
+function getAPI(): ElectronAPI {
+  if (!window.electronAPI) {
+    throw new Error('Failed to initialize app bridge.');
+  }
+  return window.electronAPI;
+}
+
+function getNextTheme(theme: Theme): Theme {
   return theme === THEME_LIGHT ? THEME_DARK : THEME_LIGHT;
 }
 
-function applyTheme(nextTheme) {
-  const resolvedTheme = nextTheme === THEME_LIGHT ? THEME_LIGHT : THEME_DARK;
+function applyTheme(nextTheme: string | null): void {
+  const resolvedTheme: Theme = nextTheme === THEME_LIGHT ? THEME_LIGHT : THEME_DARK;
   state.theme = resolvedTheme;
   document.body.dataset.theme = resolvedTheme;
 
@@ -40,24 +68,28 @@ function applyTheme(nextTheme) {
 
   try {
     window.localStorage.setItem(THEME_STORAGE_KEY, resolvedTheme);
-  } catch (_error) {}
+  } catch (_error) {
+    // ignore local storage failures
+  }
 }
 
-function initializeTheme() {
-  let savedTheme = null;
+function initializeTheme(): void {
+  let savedTheme: string | null = null;
 
   try {
     savedTheme = window.localStorage.getItem(THEME_STORAGE_KEY);
-  } catch (_error) {}
+  } catch (_error) {
+    // ignore local storage failures
+  }
 
   applyTheme(savedTheme || DEFAULT_THEME);
 }
 
-function toggleTheme() {
+function toggleTheme(): void {
   applyTheme(getNextTheme(state.theme || DEFAULT_THEME));
 }
 
-function formatBytes(bytes) {
+function formatBytes(bytes: number): string {
   if (!Number.isFinite(bytes) || bytes <= 0) {
     return '0 B';
   }
@@ -75,13 +107,13 @@ function formatBytes(bytes) {
   return `${rounded} ${units[unitIndex]}`;
 }
 
-function escapeHtml(text) {
+function escapeHtml(text: string): string {
   const div = document.createElement('div');
   div.textContent = text;
   return div.innerHTML;
 }
 
-function statusLabel(download) {
+function statusLabel(download: DownloadRecord): string {
   switch (download.status) {
     case 'downloading':
       return 'Downloading';
@@ -96,7 +128,7 @@ function statusLabel(download) {
   }
 }
 
-function getProgress(download) {
+function getProgress(download: DownloadRecord): number {
   if (!Number.isFinite(download.totalBytes) || download.totalBytes <= 0) {
     return 0;
   }
@@ -105,7 +137,7 @@ function getProgress(download) {
   return Math.max(0, Math.min(value, 100));
 }
 
-function getActionsMarkup(download) {
+function getActionsMarkup(download: DownloadRecord): string {
   if (download.status === 'completed') {
     return '';
   }
@@ -140,7 +172,7 @@ function getActionsMarkup(download) {
   `;
 }
 
-function createDownloadItem(download) {
+function createDownloadItem(download: DownloadRecord): HTMLElement {
   const item = document.createElement('article');
   item.className = `download-item state-${download.status || 'unknown'}`;
   item.dataset.id = download.id;
@@ -172,34 +204,35 @@ function createDownloadItem(download) {
 
     item.addEventListener('dblclick', async () => {
       try {
-        await window.electronAPI.openFile(download.id);
+        await getAPI().openFile(download.id);
       } catch (error) {
-        const message = error && error.message ? error.message : 'Unable to open file.';
+        const message = error instanceof Error ? error.message : 'Unable to open file.';
         window.alert(message);
       }
     });
 
-    item.addEventListener('contextmenu', (event) => {
+    item.addEventListener('contextmenu', (event: MouseEvent) => {
       event.preventDefault();
       showContextMenu(download.id, event.clientX, event.clientY);
     });
   }
 
-  item.querySelectorAll('.action-btn').forEach((button) => {
-    button.addEventListener('click', async (event) => {
+  const actionButtons = item.querySelectorAll<HTMLButtonElement>('.action-btn');
+  actionButtons.forEach((button) => {
+    button.addEventListener('click', async (event: MouseEvent) => {
       event.stopPropagation();
 
       const action = button.dataset.action;
       try {
         if (action === 'pause') {
-          await window.electronAPI.pauseDownload(download.id);
+          await getAPI().pauseDownload(download.id);
         } else if (action === 'resume') {
-          await window.electronAPI.resumeDownload(download.id);
+          await getAPI().resumeDownload(download.id);
         } else if (action === 'cancel') {
-          await window.electronAPI.cancelDownload(download.id);
+          await getAPI().cancelDownload(download.id);
         }
       } catch (error) {
-        const message = error && error.message ? error.message : 'Action failed.';
+        const message = error instanceof Error ? error.message : 'Action failed.';
         window.alert(message);
       }
     });
@@ -208,7 +241,7 @@ function createDownloadItem(download) {
   return item;
 }
 
-function renderDownloads() {
+function renderDownloads(): void {
   const list = elements.downloadList;
   const empty = elements.emptyState;
 
@@ -231,18 +264,30 @@ function renderDownloads() {
   }
 }
 
-function showUrlDialog() {
+function showUrlDialog(): void {
+  if (!elements.urlDialog || !elements.urlInput) {
+    return;
+  }
+
   elements.urlDialog.classList.remove('hidden');
   elements.urlInput.focus();
   elements.urlInput.select();
 }
 
-function hideUrlDialog() {
+function hideUrlDialog(): void {
+  if (!elements.urlDialog || !elements.urlInput) {
+    return;
+  }
+
   elements.urlDialog.classList.add('hidden');
   elements.urlInput.value = '';
 }
 
-async function startDownloadFromInput() {
+async function startDownloadFromInput(): Promise<void> {
+  if (!elements.urlInput || !elements.startButton) {
+    return;
+  }
+
   const value = elements.urlInput.value.trim();
   if (!value) {
     return;
@@ -250,20 +295,24 @@ async function startDownloadFromInput() {
 
   try {
     elements.startButton.disabled = true;
-    await window.electronAPI.startDownload(value);
+    await getAPI().startDownload(value);
     hideUrlDialog();
   } catch (error) {
-    const message = error && error.message ? error.message : 'Unable to start download.';
+    const message = error instanceof Error ? error.message : 'Unable to start download.';
     window.alert(message);
   } finally {
     elements.startButton.disabled = false;
   }
 }
 
-function showContextMenu(downloadId, x, y) {
+function showContextMenu(downloadId: string, x: number, y: number): void {
   state.contextTargetId = downloadId;
 
   const menu = elements.contextMenu;
+  if (!menu) {
+    return;
+  }
+
   menu.classList.remove('hidden');
 
   const viewportWidth = window.innerWidth;
@@ -277,12 +326,14 @@ function showContextMenu(downloadId, x, y) {
   menu.style.top = `${Math.max(8, top)}px`;
 }
 
-function hideContextMenu() {
+function hideContextMenu(): void {
   state.contextTargetId = null;
-  elements.contextMenu.classList.add('hidden');
+  if (elements.contextMenu) {
+    elements.contextMenu.classList.add('hidden');
+  }
 }
 
-async function handleContextMenuAction(action) {
+async function handleContextMenuAction(action: string): Promise<void> {
   if (!state.contextTargetId) {
     return;
   }
@@ -290,29 +341,42 @@ async function handleContextMenuAction(action) {
   const id = state.contextTargetId;
 
   if (action === 'open') {
-    await window.electronAPI.openFile(id);
+    await getAPI().openFile(id);
   } else if (action === 'open-folder') {
-    await window.electronAPI.openFolder(id);
+    await getAPI().openFolder(id);
   } else if (action === 'remove') {
-    await window.electronAPI.removeDownload(id);
+    await getAPI().removeDownload(id);
   } else if (action === 'delete') {
-    await window.electronAPI.deleteDownload(id);
+    await getAPI().deleteDownload(id);
   }
 }
 
-async function refreshDownloads() {
-  const current = await window.electronAPI.getDownloads();
+async function refreshDownloads(): Promise<void> {
+  const current = await getAPI().getDownloads();
   state.downloads = Array.isArray(current) ? current : [];
   renderDownloads();
 }
 
-function bindEvents() {
+function bindEvents(): void {
+  if (
+    !elements.addButton
+    || !elements.cancelButton
+    || !elements.startButton
+    || !elements.themeToggle
+    || !elements.urlInput
+    || !elements.contextMenu
+  ) {
+    return;
+  }
+
   elements.addButton.addEventListener('click', showUrlDialog);
   elements.cancelButton.addEventListener('click', hideUrlDialog);
-  elements.startButton.addEventListener('click', startDownloadFromInput);
+  elements.startButton.addEventListener('click', () => {
+    void startDownloadFromInput();
+  });
   elements.themeToggle.addEventListener('click', toggleTheme);
 
-  elements.urlInput.addEventListener('keydown', (event) => {
+  elements.urlInput.addEventListener('keydown', (event: KeyboardEvent) => {
     if (event.key === 'Enter') {
       void startDownloadFromInput();
     } else if (event.key === 'Escape') {
@@ -320,14 +384,30 @@ function bindEvents() {
     }
   });
 
-  document.addEventListener('click', (event) => {
-    if (!elements.contextMenu.contains(event.target)) {
+  document.addEventListener('click', (event: MouseEvent) => {
+    if (!elements.contextMenu) {
+      return;
+    }
+
+    const target = event.target;
+    if (!(target instanceof Node)) {
+      hideContextMenu();
+      return;
+    }
+
+    if (!elements.contextMenu.contains(target)) {
       hideContextMenu();
     }
   });
 
-  elements.contextMenu.addEventListener('click', async (event) => {
-    const action = event.target.dataset.action;
+  elements.contextMenu.addEventListener('click', async (event: MouseEvent) => {
+    const target = event.target;
+    if (!(target instanceof Element)) {
+      return;
+    }
+
+    const actionElement = target.closest<HTMLElement>('[data-action]');
+    const action = actionElement?.dataset.action;
     if (!action) {
       return;
     }
@@ -335,7 +415,7 @@ function bindEvents() {
     try {
       await handleContextMenuAction(action);
     } catch (error) {
-      const message = error && error.message ? error.message : 'Action failed.';
+      const message = error instanceof Error ? error.message : 'Action failed.';
       window.alert(message);
     } finally {
       hideContextMenu();
@@ -343,19 +423,19 @@ function bindEvents() {
   });
 }
 
-function cacheElements() {
-  elements.addButton = document.getElementById('add-btn');
+function cacheElements(): void {
+  elements.addButton = document.getElementById('add-btn') as HTMLButtonElement | null;
   elements.urlDialog = document.getElementById('url-dialog');
-  elements.urlInput = document.getElementById('url-input');
-  elements.startButton = document.getElementById('start-download');
-  elements.cancelButton = document.getElementById('cancel-dialog');
+  elements.urlInput = document.getElementById('url-input') as HTMLInputElement | null;
+  elements.startButton = document.getElementById('start-download') as HTMLButtonElement | null;
+  elements.cancelButton = document.getElementById('cancel-dialog') as HTMLButtonElement | null;
   elements.downloadList = document.getElementById('download-list');
   elements.emptyState = document.getElementById('empty-state');
   elements.contextMenu = document.getElementById('context-menu');
-  elements.themeToggle = document.getElementById('theme-toggle');
+  elements.themeToggle = document.getElementById('theme-toggle') as HTMLButtonElement | null;
 }
 
-async function initialize() {
+async function initialize(): Promise<void> {
   cacheElements();
   initializeTheme();
 
@@ -372,7 +452,7 @@ async function initialize() {
 
   bindEvents();
 
-  state.unsubscribeDownloads = window.electronAPI.onDownloadsChanged((nextDownloads) => {
+  state.unsubscribeDownloads = getAPI().onDownloadsChanged((nextDownloads) => {
     state.downloads = Array.isArray(nextDownloads) ? nextDownloads : [];
     renderDownloads();
   });
