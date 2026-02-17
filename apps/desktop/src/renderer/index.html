@@ -39,10 +39,16 @@
       </button>
     </header>
 
-    <div id="url-dialog" class="dialog-panel window-no-drag hidden grid grid-cols-[minmax(0,1fr)_auto_auto] gap-2 rounded-[12px] border border-[var(--border)] bg-[var(--surface)] p-[11px] shadow-[var(--shadow-panel)] backdrop-blur-[12px] max-[760px]:grid-cols-1">
-      <input type="text" id="url-input" class="min-h-10 rounded-[8px] border border-[var(--border)] bg-[var(--surface-input)] px-3 py-2.5 text-[14px] text-[var(--text-main)] outline-none transition-[border-color,box-shadow] duration-150 ease-out placeholder:text-[var(--text-faint)] focus:border-[var(--border-strong)] focus:shadow-[0_0_0_3px_color-mix(in_srgb,var(--accent)_18%,transparent)]" placeholder="Enter download URL...">
-      <button id="start-download" class="min-h-10 rounded-[8px] border border-transparent bg-[linear-gradient(140deg,var(--accent),var(--accent-strong))] px-[14px] text-[12px] font-bold uppercase tracking-[0.05em] text-[var(--accent-contrast)] shadow-[0_8px_14px_color-mix(in_srgb,var(--accent)_24%,transparent)] transition-[transform,border-color,box-shadow,opacity] duration-150 ease-out hover:-translate-y-px disabled:translate-y-0 disabled:cursor-wait disabled:opacity-[0.55] disabled:shadow-none max-[760px]:w-full">Download</button>
-      <button id="cancel-dialog" class="min-h-10 rounded-[8px] border border-[var(--border)] bg-[var(--surface-soft)] px-[14px] text-[12px] font-bold uppercase tracking-[0.05em] text-[var(--text-main)] transition-[transform,border-color] duration-150 ease-out hover:-translate-y-px hover:border-[var(--border-strong)] max-[760px]:w-full">Cancel</button>
+    <div id="url-dialog" class="window-no-drag hidden fixed inset-0 z-[900] grid place-items-center p-4" role="dialog" aria-modal="true" aria-hidden="true" aria-labelledby="url-dialog-title">
+      <div id="url-dialog-backdrop" class="absolute inset-0 bg-[color-mix(in_srgb,var(--surface-strong)_44%,#000)] backdrop-blur-[3px]"></div>
+      <div class="dialog-panel relative z-[1] w-full max-w-[560px] rounded-[14px] border border-[var(--border)] bg-[var(--surface)] p-[14px] shadow-[0_22px_40px_rgba(0,0,0,0.36)] backdrop-blur-[12px]">
+        <h2 id="url-dialog-title" class="mb-3 text-[13px] font-bold uppercase tracking-[0.08em] text-[var(--text-faint)]">Add download URL</h2>
+        <input type="text" id="url-input" class="min-h-10 w-full rounded-[8px] border border-[var(--border)] bg-[var(--surface-input)] px-3 py-2.5 text-[14px] text-[var(--text-main)] outline-none transition-[border-color,box-shadow] duration-150 ease-out placeholder:text-[var(--text-faint)] focus:border-[var(--border-strong)] focus:shadow-[0_0_0_3px_color-mix(in_srgb,var(--accent)_18%,transparent)]" placeholder="Enter download URL...">
+        <div class="mt-3 grid grid-cols-2 gap-2 max-[520px]:grid-cols-1">
+          <button id="start-download" class="min-h-10 rounded-[8px] border border-transparent bg-[linear-gradient(140deg,var(--accent),var(--accent-strong))] px-[14px] text-[12px] font-bold uppercase tracking-[0.05em] text-[var(--accent-contrast)] shadow-[0_8px_14px_color-mix(in_srgb,var(--accent)_24%,transparent)] transition-[transform,border-color,box-shadow,opacity] duration-150 ease-out hover:-translate-y-px disabled:translate-y-0 disabled:cursor-wait disabled:opacity-[0.55] disabled:shadow-none">Download</button>
+          <button id="cancel-dialog" class="min-h-10 rounded-[8px] border border-[var(--border)] bg-[var(--surface-soft)] px-[14px] text-[12px] font-bold uppercase tracking-[0.05em] text-[var(--text-main)] transition-[transform,border-color] duration-150 ease-out hover:-translate-y-px hover:border-[var(--border-strong)]">Cancel</button>
+        </div>
+      </div>
     </div>
 
     <main class="flex-1 min-h-0 overflow-y-auto rounded-[16px] border border-[var(--border)] bg-[var(--surface)] p-3 shadow-[var(--shadow-panel)] backdrop-blur-[12px]" id="download-list">

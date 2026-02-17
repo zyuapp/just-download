@@ -10,6 +10,7 @@ interface RendererState {
 interface ElementsState {
   addButton: HTMLButtonElement | null;
   urlDialog: HTMLElement | null;
+  urlDialogBackdrop: HTMLElement | null;
   urlInput: HTMLInputElement | null;
   startButton: HTMLButtonElement | null;
   cancelButton: HTMLButtonElement | null;
@@ -29,6 +30,7 @@ const state: RendererState = {
 const elements: ElementsState = {
   addButton: null,
   urlDialog: null,
+  urlDialogBackdrop: null,
   urlInput: null,
   startButton: null,
   cancelButton: null,
@@ -277,8 +279,13 @@ function showUrlDialog(): void {
   }
 
   elements.urlDialog.classList.remove('hidden');
+  elements.urlDialog.setAttribute('aria-hidden', 'false');
   elements.urlInput.focus();
   elements.urlInput.select();
+}
+
+function isUrlDialogOpen(): boolean {
+  return Boolean(elements.urlDialog && !elements.urlDialog.classList.contains('hidden'));
 }
 
 function hideUrlDialog(): void {
@@ -287,7 +294,9 @@ function hideUrlDialog(): void {
   }
 
   elements.urlDialog.classList.add('hidden');
+  elements.urlDialog.setAttribute('aria-hidden', 'true');
   elements.urlInput.value = '';
+  elements.addButton?.focus();
 }
 
 async function startDownloadFromInput(): Promise<void> {
@@ -367,6 +376,8 @@ async function refreshDownloads(): Promise<void> {
 function bindEvents(): void {
   if (
     !elements.addButton
+    || !elements.urlDialog
+    || !elements.urlDialogBackdrop
     || !elements.cancelButton
     || !elements.startButton
     || !elements.themeToggle
@@ -377,6 +388,7 @@ function bindEvents(): void {
   }
 
   elements.addButton.addEventListener('click', showUrlDialog);
+  elements.urlDialogBackdrop.addEventListener('click', hideUrlDialog);
   elements.cancelButton.addEventListener('click', hideUrlDialog);
   elements.startButton.addEventListener('click', () => {
     void startDownloadFromInput();
@@ -387,8 +399,19 @@ function bindEvents(): void {
     if (event.key === 'Enter') {
       void startDownloadFromInput();
     } else if (event.key === 'Escape') {
+      event.preventDefault();
+      event.stopPropagation();
       hideUrlDialog();
     }
+  });
+
+  document.addEventListener('keydown', (event: KeyboardEvent) => {
+    if (event.key !== 'Escape' || !isUrlDialogOpen()) {
+      return;
+    }
+
+    event.preventDefault();
+    hideUrlDialog();
   });
 
   document.addEventListener('click', (event: MouseEvent) => {
@@ -433,6 +456,7 @@ function bindEvents(): void {
 function cacheElements(): void {
   elements.addButton = document.getElementById('add-btn') as HTMLButtonElement | null;
   elements.urlDialog = document.getElementById('url-dialog');
+  elements.urlDialogBackdrop = document.getElementById('url-dialog-backdrop');
   elements.urlInput = document.getElementById('url-input') as HTMLInputElement | null;
   elements.startButton = document.getElementById('start-download') as HTMLButtonElement | null;
   elements.cancelButton = document.getElementById('cancel-dialog') as HTMLButtonElement | null;
