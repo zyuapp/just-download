@@ -9,6 +9,10 @@
     "dev": "npm run build",
     "lint": "node -e \"process.exit(0)\"",
     "test": "node -e \"process.exit(0)\"",
-    "typecheck": "node -e \"process.exit(0)\""
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "devDependencies": {
+    "@types/chrome": "^0.1.36",
+    "typescript": "^5.7.3"
   }
 }

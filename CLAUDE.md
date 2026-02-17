@@ -8,7 +8,7 @@ Follow this file before making changes.
 - Monorepo using npm workspaces (`package.json` at root).
 - Workspaces:
   - `@just-download/desktop`: Electron desktop app (TypeScript + Tailwind CSS).
-  - `@just-download/chrome-extension`: MV3 extension (plain JavaScript).
+  - `@just-download/chrome-extension`: MV3 extension (TypeScript + static HTML/CSS).
 - Task runner: `lage` (`lage.config.js`).
 - Build outputs:
   - Desktop: `apps/desktop/dist`
@@ -20,7 +20,7 @@ Follow this file before making changes.
 - ESLint config: not present.
 - Prettier config: not present.
 - Test runner framework (Jest/Vitest/etc.): not configured.
-- Extension `lint`, `test`, and `typecheck` scripts are currently no-op.
+- Extension `lint` and `test` scripts are currently no-op.
 - Desktop has `typecheck`, but no dedicated `lint` or `test` script.
 
 ## Install / Bootstrap
@@ -48,7 +48,7 @@ Follow this file before making changes.
 ### Lint / Typecheck
 - Monorepo lint pipeline: `npm run lint`
 - Desktop typecheck: `npm run -w @just-download/desktop typecheck`
-- Extension typecheck: `npm run -w @just-download/chrome-extension typecheck` (no-op)
+- Extension typecheck: `npm run -w @just-download/chrome-extension typecheck`
 
 ### Test (including single-test guidance)
 - Monorepo test pipeline: `npm run test`
@@ -82,8 +82,8 @@ Follow this file before making changes.
 - Desktop preload bridge: `apps/desktop/src/main/preload.ts`
 - Desktop shared contracts: `apps/desktop/src/shared/types.ts`
 - Desktop renderer logic: `apps/desktop/src/renderer/renderer.ts`
-- Extension background worker: `apps/chrome-extension/src/background.js`
-- Extension options page logic: `apps/chrome-extension/src/options.js`
+- Extension background worker: `apps/chrome-extension/src/background.ts`
+- Extension options page logic: `apps/chrome-extension/src/options.ts`
 - Bridge endpoints: `/v1/health` and `/v1/downloads` on `127.0.0.1:17839`
 
 ## Code Style and Conventions

@@ -1,21 +1,49 @@
 const SETTINGS_KEY = 'bridgeSettings';
 const STATS_KEY = 'bridgeStats';
 
-const DEFAULT_SETTINGS = {
+type BridgeSettings = {
+  enabled: boolean;
+  bridgeBaseUrl: string;
+  requestTimeoutMs: number;
+};
+
+type BridgeStats = {
+  interceptedCount: number;
+  fallbackCount: number;
+  lastError: string | null;
+  lastInterceptedAt: number | null;
+  lastFallbackAt: number | null;
+};
+
+type StatusTone = 'neutral' | 'success' | 'error';
+
+const DEFAULT_SETTINGS = Object.freeze<BridgeSettings>({
   enabled: true,
   bridgeBaseUrl: 'http://127.0.0.1:17839',
   requestTimeoutMs: 4000
-};
+});
 
-const DEFAULT_STATS = {
+const DEFAULT_STATS = Object.freeze<BridgeStats>({
   interceptedCount: 0,
   fallbackCount: 0,
   lastError: null,
   lastInterceptedAt: null,
   lastFallbackAt: null
-};
+});
 
-const elements = {
+const elements: {
+  enabled: HTMLInputElement | null;
+  bridgeUrl: HTMLInputElement | null;
+  timeoutMs: HTMLInputElement | null;
+  saveSettings: HTMLButtonElement | null;
+  checkBridge: HTMLButtonElement | null;
+  statusLine: HTMLElement | null;
+  interceptedCount: HTMLElement | null;
+  fallbackCount: HTMLElement | null;
+  lastSuccess: HTMLElement | null;
+  lastFallback: HTMLElement | null;
+  lastError: HTMLElement | null;
+} = {
   enabled: null,
   bridgeUrl: null,
   timeoutMs: null,
@@ -30,7 +58,7 @@ const elements = {
 };
 
 function storageGet(keys) {
-  return new Promise((resolve) => {
+  return new Promise<Record<string, any>>((resolve) => {
     chrome.storage.local.get(keys, (result) => {
       resolve(result || {});
     });
@@ -38,7 +66,7 @@ function storageGet(keys) {
 }
 
 function storageSet(values) {
-  return new Promise((resolve, reject) => {
+  return new Promise<void>((resolve, reject) => {
     chrome.storage.local.set(values, () => {
       const runtimeError = chrome.runtime.lastError;
       if (runtimeError) {
@@ -51,7 +79,7 @@ function storageSet(values) {
   });
 }
 
-function normalizeSettings(value) {
+function normalizeSettings(value): BridgeSettings {
   const next = value && typeof value === 'object' ? value : {};
 
   return {
@@ -65,7 +93,7 @@ function normalizeSettings(value) {
   };
 }
 
-function normalizeStats(value) {
+function normalizeStats(value): BridgeStats {
   const next = value && typeof value === 'object' ? value : {};
 
   return {
@@ -77,7 +105,7 @@ function normalizeStats(value) {
   };
 }
 
-function formatTimestamp(value) {
+function formatTimestamp(value: number | null) {
   if (!Number.isFinite(value)) {
     return 'Never';
   }
@@ -85,7 +113,7 @@ function formatTimestamp(value) {
   return new Date(value).toLocaleString();
 }
 
-function setStatus(message, tone = 'neutral') {
+function setStatus(message: string, tone: StatusTone = 'neutral') {
   if (!elements.statusLine) {
     return;
   }
@@ -101,11 +129,11 @@ function setStatus(message, tone = 'neutral') {
 }
 
 function cacheElements() {
-  elements.enabled = document.getElementById('enabled-toggle');
-  elements.bridgeUrl = document.getElementById('bridge-url');
-  elements.timeoutMs = document.getElementById('timeout-ms');
-  elements.saveSettings = document.getElementById('save-settings');
-  elements.checkBridge = document.getElementById('check-bridge');
+  elements.enabled = document.getElementById('enabled-toggle') as HTMLInputElement | null;
+  elements.bridgeUrl = document.getElementById('bridge-url') as HTMLInputElement | null;
+  elements.timeoutMs = document.getElementById('timeout-ms') as HTMLInputElement | null;
+  elements.saveSettings = document.getElementById('save-settings') as HTMLButtonElement | null;
+  elements.checkBridge = document.getElementById('check-bridge') as HTMLButtonElement | null;
   elements.statusLine = document.getElementById('status-line');
   elements.interceptedCount = document.getElementById('intercepted-count');
   elements.fallbackCount = document.getElementById('fallback-count');
@@ -114,7 +142,7 @@ function cacheElements() {
   elements.lastError = document.getElementById('last-error');
 }
 
-function renderSettings(settings) {
+function renderSettings(settings: BridgeSettings) {
   if (!elements.enabled || !elements.bridgeUrl || !elements.timeoutMs) {
     return;
   }
@@ -124,7 +152,7 @@ function renderSettings(settings) {
   elements.timeoutMs.value = String(settings.requestTimeoutMs);
 }
 
-function renderStats(stats) {
+function renderStats(stats: BridgeStats) {
   if (
     !elements.interceptedCount
     || !elements.fallbackCount
@@ -245,3 +273,5 @@ async function initialize() {
 }
 
 void initialize();
+
+export {};

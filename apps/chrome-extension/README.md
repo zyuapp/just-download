@@ -73,7 +73,10 @@ npm run dev:desktop
 
 - `npm run build:extension` builds `apps/chrome-extension/dist`.
 - `npm run dev:extension` runs the extension build script.
+- `npm run -w @just-download/chrome-extension typecheck` runs TypeScript checks for extension sources.
 - `npm run dev:desktop` starts the Electron desktop app.
+
+Extension source entry points are TypeScript (`src/background.ts`, `src/options.ts`) and compile to JavaScript in `dist/` for Chrome to load.
 
 ## Notes
 

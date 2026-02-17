@@ -1,7 +1,37 @@
 const SETTINGS_KEY = 'bridgeSettings';
 const STATS_KEY = 'bridgeStats';
 
-const DEFAULT_SETTINGS = Object.freeze({
+type BridgeSettings = {
+  enabled: boolean;
+  bridgeBaseUrl: string;
+  requestTimeoutMs: number;
+};
+
+type BridgeStats = {
+  interceptedCount: number;
+  fallbackCount: number;
+  lastError: string | null;
+  lastInterceptedAt: number | null;
+  lastFallbackAt: number | null;
+};
+
+type HandoffAuth = {
+  type: 'basic';
+  username: string;
+  password: string;
+};
+
+type HandoffPayload = {
+  url: string;
+  requestId: string;
+  mode: 'draft';
+  source: 'chrome-extension';
+  referrer: string | null;
+  filenameHint: string | null;
+  auth: HandoffAuth | null;
+};
+
+const DEFAULT_SETTINGS = Object.freeze<BridgeSettings>({
   enabled: true,
   bridgeBaseUrl: 'http://127.0.0.1:17839',
   requestTimeoutMs: 4000
@@ -14,7 +44,7 @@ const DESKTOP_HEALTH_TIMEOUT_MS = 1500;
 const DESKTOP_LAUNCH_TAB_GC_DELAY_MS = 25000;
 const DESKTOP_LAUNCH_COOLDOWN_MS = 2000;
 
-const DEFAULT_STATS = Object.freeze({
+const DEFAULT_STATS = Object.freeze<BridgeStats>({
   interceptedCount: 0,
   fallbackCount: 0,
   lastError: null,
@@ -22,11 +52,11 @@ const DEFAULT_STATS = Object.freeze({
   lastFallbackAt: null
 });
 
-let settingsCache = { ...DEFAULT_SETTINGS };
-const activeInterceptions = new Set();
+let settingsCache: BridgeSettings = { ...DEFAULT_SETTINGS };
+const activeInterceptions = new Set<number>();
 let lastDesktopLaunchAt = 0;
 
-function normalizeSettings(value) {
+function normalizeSettings(value): BridgeSettings {
   const next = value && typeof value === 'object' ? value : {};
   const requestTimeoutMs = Number.isFinite(next.requestTimeoutMs)
     ? Math.min(30000, Math.max(500, Math.floor(next.requestTimeoutMs)))
@@ -41,7 +71,7 @@ function normalizeSettings(value) {
   };
 }
 
-function normalizeStats(value) {
+function normalizeStats(value): BridgeStats {
   const next = value && typeof value === 'object' ? value : {};
 
   return {
@@ -54,7 +84,7 @@ function normalizeStats(value) {
 }
 
 function storageGet(keys) {
-  return new Promise((resolve) => {
+  return new Promise<Record<string, any>>((resolve) => {
     chrome.storage.local.get(keys, (result) => {
       resolve(result || {});
     });
@@ -62,7 +92,7 @@ function storageGet(keys) {
 }
 
 function storageSet(values) {
-  return new Promise((resolve, reject) => {
+  return new Promise<void>((resolve, reject) => {
     chrome.storage.local.set(values, () => {
       const runtimeError = chrome.runtime.lastError;
       if (runtimeError) {
@@ -75,7 +105,7 @@ function storageSet(values) {
   });
 }
 
-function generateRequestId(downloadId) {
+function generateRequestId(downloadId: number) {
   const suffix = typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
     ? crypto.randomUUID()
     : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
@@ -83,13 +113,13 @@ function generateRequestId(downloadId) {
   return `jd-${downloadId}-${suffix}`;
 }
 
-function sleep(ms) {
-  return new Promise((resolve) => {
+function sleep(ms: number) {
+  return new Promise<void>((resolve) => {
     setTimeout(resolve, ms);
   });
 }
 
-function decodeURIComponentSafe(value) {
+function decodeURIComponentSafe(value: string) {
   try {
     return decodeURIComponent(value);
   } catch {
@@ -97,7 +127,7 @@ function decodeURIComponentSafe(value) {
   }
 }
 
-function getDownloadUrl(downloadItem) {
+function getDownloadUrl(downloadItem: chrome.downloads.DownloadItem | null | undefined) {
   if (!downloadItem || typeof downloadItem !== 'object') {
     return '';
   }
@@ -113,7 +143,7 @@ function getDownloadUrl(downloadItem) {
   return '';
 }
 
-function isHttpDownloadUrl(url) {
+function isHttpDownloadUrl(url: string) {
   try {
     const parsed = new URL(url);
     return parsed.protocol === 'http:' || parsed.protocol === 'https:';
@@ -122,7 +152,7 @@ function isHttpDownloadUrl(url) {
   }
 }
 
-function splitAuthFromUrl(url) {
+function splitAuthFromUrl(url: string): { url: string; auth: HandoffAuth | null } {
   try {
     const parsed = new URL(url);
     const hasEmbeddedAuth = Boolean(parsed.username || parsed.password);
@@ -134,7 +164,7 @@ function splitAuthFromUrl(url) {
       };
     }
 
-    const auth = {
+    const auth: HandoffAuth = {
       type: 'basic',
       username: decodeURIComponentSafe(parsed.username || ''),
       password: decodeURIComponentSafe(parsed.password || '')
@@ -155,7 +185,7 @@ function splitAuthFromUrl(url) {
   }
 }
 
-function redactCredentialUrls(message) {
+function redactCredentialUrls(message: string) {
   if (typeof message !== 'string' || !message) {
     return '';
   }
@@ -163,7 +193,7 @@ function redactCredentialUrls(message) {
   return message.replace(/(https?:\/\/)([^\s/:@]+)(?::[^\s@/]*)?@/gi, '$1[redacted]@');
 }
 
-function sanitizeErrorMessage(error) {
+function sanitizeErrorMessage(error: unknown) {
   const message = error instanceof Error ? error.message : String(error || 'Desktop handoff failed.');
   const sanitized = redactCredentialUrls(message).replace(/\s+/g, ' ').trim();
 
@@ -174,7 +204,7 @@ function sanitizeErrorMessage(error) {
   return sanitized.length > 220 ? `${sanitized.slice(0, 217)}...` : sanitized;
 }
 
-function extractFilenameHint(pathLikeValue) {
+function extractFilenameHint(pathLikeValue: string | null | undefined) {
   if (typeof pathLikeValue !== 'string' || !pathLikeValue.trim()) {
     return null;
   }
@@ -183,8 +213,8 @@ function extractFilenameHint(pathLikeValue) {
   return filename && filename.trim() ? filename.trim() : null;
 }
 
-function pauseDownload(downloadId) {
-  return new Promise((resolve, reject) => {
+function pauseDownload(downloadId: number) {
+  return new Promise<void>((resolve, reject) => {
     chrome.downloads.pause(downloadId, () => {
       const runtimeError = chrome.runtime.lastError;
       if (runtimeError) {
@@ -197,8 +227,8 @@ function pauseDownload(downloadId) {
   });
 }
 
-function resumeDownload(downloadId) {
-  return new Promise((resolve, reject) => {
+function resumeDownload(downloadId: number) {
+  return new Promise<void>((resolve, reject) => {
     chrome.downloads.resume(downloadId, () => {
       const runtimeError = chrome.runtime.lastError;
       if (runtimeError) {
@@ -211,8 +241,8 @@ function resumeDownload(downloadId) {
   });
 }
 
-function cancelDownload(downloadId) {
-  return new Promise((resolve, reject) => {
+function cancelDownload(downloadId: number) {
+  return new Promise<void>((resolve, reject) => {
     chrome.downloads.cancel(downloadId, () => {
       const runtimeError = chrome.runtime.lastError;
       if (runtimeError) {
@@ -225,8 +255,8 @@ function cancelDownload(downloadId) {
   });
 }
 
-function eraseDownload(downloadId) {
-  return new Promise((resolve, reject) => {
+function eraseDownload(downloadId: number) {
+  return new Promise<void>((resolve, reject) => {
     chrome.downloads.erase({ id: downloadId }, () => {
       const runtimeError = chrome.runtime.lastError;
       if (runtimeError) {
@@ -239,8 +269,8 @@ function eraseDownload(downloadId) {
   });
 }
 
-function createTab(createProperties) {
-  return new Promise((resolve, reject) => {
+function createTab(createProperties: chrome.tabs.CreateProperties) {
+  return new Promise<chrome.tabs.Tab | null>((resolve, reject) => {
     chrome.tabs.create(createProperties, (tab) => {
       const runtimeError = chrome.runtime.lastError;
       if (runtimeError) {
@@ -253,8 +283,8 @@ function createTab(createProperties) {
   });
 }
 
-function removeTab(tabId) {
-  return new Promise((resolve, reject) => {
+function removeTab(tabId: number) {
+  return new Promise<void>((resolve, reject) => {
     chrome.tabs.remove(tabId, () => {
       const runtimeError = chrome.runtime.lastError;
       if (runtimeError) {
@@ -267,7 +297,7 @@ function removeTab(tabId) {
   });
 }
 
-async function safeResumeDownload(downloadId) {
+async function safeResumeDownload(downloadId: number) {
   try {
     await resumeDownload(downloadId);
   } catch {
@@ -275,7 +305,7 @@ async function safeResumeDownload(downloadId) {
   }
 }
 
-async function safeCancelDownload(downloadId) {
+async function safeCancelDownload(downloadId: number) {
   try {
     await cancelDownload(downloadId);
   } catch {
@@ -283,7 +313,7 @@ async function safeCancelDownload(downloadId) {
   }
 }
 
-async function safeEraseDownload(downloadId) {
+async function safeEraseDownload(downloadId: number) {
   try {
     await eraseDownload(downloadId);
   } catch {
@@ -291,7 +321,7 @@ async function safeEraseDownload(downloadId) {
   }
 }
 
-async function safeRemoveTab(tabId) {
+async function safeRemoveTab(tabId: number) {
   try {
     await removeTab(tabId);
   } catch {
@@ -299,7 +329,7 @@ async function safeRemoveTab(tabId) {
   }
 }
 
-async function updateStats(mutator) {
+async function updateStats(mutator: (stats: BridgeStats) => void) {
   const stored = await storageGet([STATS_KEY]);
   const nextStats = normalizeStats(stored[STATS_KEY] || DEFAULT_STATS);
 
@@ -549,3 +579,5 @@ chrome.downloads.onCreated.addListener((downloadItem) => {
 });
 
 void ensureDefaults();
+
+export {};
