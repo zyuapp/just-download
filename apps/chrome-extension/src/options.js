@@ -187,17 +187,17 @@ async function checkBridge() {
     });
 
     if (!response.ok) {
-      throw new Error(`Desktop bridge returned HTTP ${response.status}.`);
+      throw new Error(`Desktop app returned HTTP ${response.status}.`);
     }
 
-    setStatus('Desktop bridge is reachable.', 'success');
+    setStatus('Desktop app is reachable.', 'success');
   } catch (error) {
     if (error && error.name === 'AbortError') {
-      setStatus('Desktop bridge check timed out.', 'error');
+      setStatus('Desktop app check timed out.', 'error');
       return;
     }
 
-    const message = error instanceof Error ? error.message : 'Unable to reach desktop bridge.';
+    const message = error instanceof Error ? error.message : 'Unable to reach desktop app.';
     setStatus(message, 'error');
   } finally {
     clearTimeout(timeoutId);

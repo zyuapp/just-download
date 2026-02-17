@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
-  "name": "Just Download Bridge",
-  "description": "Intercept Chrome downloads, open Just Download, and prefill a desktop download draft.",
+  "name": "Just Download",
+  "description": "Manage Chrome downloads in the Just Download desktop app.",
   "version": "0.1.0",
   "permissions": [
     "downloads",
@@ -15,8 +15,18 @@
     "service_worker": "background.js",
     "type": "module"
   },
+  "icons": {
+    "16": "icons/icon-16.png",
+    "32": "icons/icon-32.png",
+    "48": "icons/icon-48.png",
+    "128": "icons/icon-128.png"
+  },
   "options_page": "options.html",
   "action": {
-    "default_title": "Just Download Bridge"
+    "default_title": "Just Download",
+    "default_icon": {
+      "16": "icons/icon-16.png",
+      "32": "icons/icon-32.png"
+    }
   }
 }

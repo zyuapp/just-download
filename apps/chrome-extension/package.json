@@ -2,7 +2,7 @@
   "name": "@just-download/chrome-extension",
   "version": "0.1.0",
   "private": true,
-  "description": "Chrome extension that intercepts browser downloads and opens Just Download in draft confirmation mode",
+  "description": "Manage Chrome downloads in the Just Download desktop app.",
   "scripts": {
     "clean": "node -e \"require('fs').rmSync('dist', { recursive: true, force: true })\"",
     "build": "node scripts/build.cjs",

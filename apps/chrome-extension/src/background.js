@@ -441,17 +441,17 @@ async function handoffToDesktop(payload) {
 
     if (!response.ok) {
       const details = await safeReadResponse(response);
-      throw new Error(details ? `Desktop bridge returned HTTP ${response.status}: ${details}` : `Desktop bridge returned HTTP ${response.status}.`);
+      throw new Error(details ? `Desktop app returned HTTP ${response.status}: ${details}` : `Desktop app returned HTTP ${response.status}.`);
     }
 
     const responseBody = await response.json().catch(() => ({}));
     return Boolean(responseBody && responseBody.accepted);
   } catch (error) {
     if (error && error.name === 'AbortError') {
-      throw new Error('Desktop bridge request timed out.');
+      throw new Error('Desktop app request timed out.');
     }
 
-    throw error instanceof Error ? error : new Error('Desktop bridge request failed.');
+    throw error instanceof Error ? error : new Error('Desktop app request failed.');
   } finally {
     clearTimeout(timeoutId);
   }
@@ -504,7 +504,7 @@ async function interceptDownload(downloadItem) {
     });
 
     if (!accepted) {
-      throw new Error('Desktop bridge did not accept this download.');
+      throw new Error('Desktop app did not accept this download.');
     }
 
     await safeCancelDownload(downloadId);

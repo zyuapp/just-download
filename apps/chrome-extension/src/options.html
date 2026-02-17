@@ -3,12 +3,12 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Just Download Bridge Settings</title>
+  <title>Just Download Settings</title>
   <link rel="stylesheet" href="options.css">
 </head>
 <body>
   <main class="container">
-    <h1>Just Download Bridge</h1>
+    <h1>Just Download</h1>
     <p class="subtitle">Auto-intercept Chrome downloads, open the desktop app, and prefill a URL draft for confirmation.</p>
 
     <section class="panel">
@@ -18,18 +18,18 @@
       </label>
 
       <label class="row" for="bridge-url">
-        <span>Desktop bridge URL</span>
+        <span>Desktop app URL</span>
         <input id="bridge-url" type="text" placeholder="http://127.0.0.1:17839">
       </label>
 
       <label class="row" for="timeout-ms">
-        <span>Bridge timeout (ms)</span>
+        <span>Connection timeout (ms)</span>
         <input id="timeout-ms" type="number" min="500" max="30000" step="100">
       </label>
 
       <div class="actions">
         <button id="save-settings" type="button">Save Settings</button>
-        <button id="check-bridge" type="button" class="secondary">Check Desktop Bridge</button>
+        <button id="check-bridge" type="button" class="secondary">Check Desktop App</button>
       </div>
 
       <p id="status-line" class="status" role="status" aria-live="polite"></p>
