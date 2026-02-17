@@ -190,7 +190,12 @@ function createDownloadItem(download: DownloadRecord): HTMLElement {
   const progress = getProgress(download);
   const totalLabel = download.totalBytes > 0 ? formatBytes(download.totalBytes) : 'Unknown';
   const errorText = download.status === 'error' && download.error
-    ? `<p class="download-error">${escapeHtml(download.error)}</p>`
+    ? `
+      <div class="download-error" role="alert" aria-live="polite">
+        <div class="download-error-label">Download failed</div>
+        <p class="download-error-message">${escapeHtml(download.error)}</p>
+      </div>
+    `
     : '';
 
   item.innerHTML = `

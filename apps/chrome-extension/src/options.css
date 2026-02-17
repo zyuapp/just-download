@@ -1,0 +1,158 @@
+:root {
+  color-scheme: light;
+  --bg: #f4f6fb;
+  --panel: #ffffff;
+  --border: #d9deea;
+  --text-main: #17223b;
+  --text-muted: #59647f;
+  --accent: #2354c5;
+  --accent-soft: #e9efff;
+  --danger: #b4233c;
+  --success: #0f8a49;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: 'Segoe UI', 'Helvetica Neue', sans-serif;
+  background: radial-gradient(circle at top left, #ffffff 0, #f4f6fb 45%, #edf1fa 100%);
+  color: var(--text-main);
+}
+
+.container {
+  max-width: 780px;
+  margin: 0 auto;
+  padding: 28px 22px 36px;
+}
+
+h1 {
+  margin: 0;
+  font-size: 30px;
+  letter-spacing: 0.02em;
+}
+
+.subtitle {
+  margin: 10px 0 0;
+  color: var(--text-muted);
+  font-size: 14px;
+}
+
+.panel {
+  margin-top: 20px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--panel);
+  padding: 18px;
+  box-shadow: 0 8px 20px rgba(40, 55, 85, 0.08);
+}
+
+.row {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.checkbox-row {
+  flex-direction: row;
+  align-items: center;
+  gap: 10px;
+  font-weight: 600;
+  margin-bottom: 18px;
+}
+
+input[type='text'],
+input[type='number'] {
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 10px 12px;
+  font-size: 14px;
+  color: var(--text-main);
+  background: #fdfdff;
+}
+
+input[type='checkbox'] {
+  width: 18px;
+  height: 18px;
+}
+
+.actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+button {
+  border: none;
+  border-radius: 10px;
+  background: var(--accent);
+  color: #ffffff;
+  padding: 10px 16px;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+button.secondary {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.status {
+  margin: 14px 0 0;
+  min-height: 20px;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.status.success {
+  color: var(--success);
+}
+
+.status.error {
+  color: var(--danger);
+}
+
+.stats-panel h2 {
+  margin: 0 0 12px;
+  font-size: 16px;
+}
+
+.stats-panel dl {
+  margin: 0;
+}
+
+.stats-panel dl > div {
+  display: grid;
+  grid-template-columns: 190px 1fr;
+  padding: 7px 0;
+  border-bottom: 1px solid #edf0f7;
+}
+
+.stats-panel dl > div:last-child {
+  border-bottom: none;
+}
+
+.stats-panel dt {
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.stats-panel dd {
+  margin: 0;
+}
+
+@media (max-width: 640px) {
+  .container {
+    padding: 16px;
+  }
+
+  .stats-panel dl > div {
+    grid-template-columns: 1fr;
+    gap: 4px;
+  }
+}

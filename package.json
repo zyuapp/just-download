@@ -8,7 +8,11 @@
   "scripts": {
     "start": "npm run -w @just-download/desktop start",
     "dev": "npm run -w @just-download/desktop dev",
+    "dev:desktop": "npm run -w @just-download/desktop dev",
+    "dev:extension": "npm run -w @just-download/chrome-extension dev",
     "package:mac": "npm run -w @just-download/desktop package:mac",
+    "build:desktop": "npm run -w @just-download/desktop build",
+    "build:extension": "npm run -w @just-download/chrome-extension build",
     "build": "lage build --allow-no-target-runs",
     "test": "lage test --allow-no-target-runs",
     "lint": "lage lint --allow-no-target-runs"

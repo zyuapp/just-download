@@ -1,0 +1,14 @@
+{
+  "name": "@just-download/chrome-extension",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Chrome extension that intercepts browser downloads and hands them to Just Download desktop app",
+  "scripts": {
+    "clean": "node -e \"require('fs').rmSync('dist', { recursive: true, force: true })\"",
+    "build": "node scripts/build.cjs",
+    "dev": "npm run build",
+    "lint": "node -e \"process.exit(0)\"",
+    "test": "node -e \"process.exit(0)\"",
+    "typecheck": "node -e \"process.exit(0)\""
+  }
+}

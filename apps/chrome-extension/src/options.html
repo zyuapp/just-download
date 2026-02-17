@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Just Download Bridge Settings</title>
+  <link rel="stylesheet" href="options.css">
+</head>
+<body>
+  <main class="container">
+    <h1>Just Download Bridge</h1>
+    <p class="subtitle">Auto-intercept Chrome downloads and pass them to the desktop app.</p>
+
+    <section class="panel">
+      <label class="row checkbox-row" for="enabled-toggle">
+        <input id="enabled-toggle" type="checkbox">
+        <span>Enable auto-intercept for all Chrome downloads</span>
+      </label>
+
+      <label class="row" for="bridge-url">
+        <span>Desktop bridge URL</span>
+        <input id="bridge-url" type="text" placeholder="http://127.0.0.1:17839">
+      </label>
+
+      <label class="row" for="timeout-ms">
+        <span>Bridge timeout (ms)</span>
+        <input id="timeout-ms" type="number" min="500" max="30000" step="100">
+      </label>
+
+      <div class="actions">
+        <button id="save-settings" type="button">Save Settings</button>
+        <button id="check-bridge" type="button" class="secondary">Check Desktop Bridge</button>
+      </div>
+
+      <p id="status-line" class="status" role="status" aria-live="polite"></p>
+    </section>
+
+    <section class="panel stats-panel">
+      <h2>Handoff Stats</h2>
+      <dl>
+        <div>
+          <dt>Intercepted</dt>
+          <dd id="intercepted-count">0</dd>
+        </div>
+        <div>
+          <dt>Fallback to Chrome</dt>
+          <dd id="fallback-count">0</dd>
+        </div>
+        <div>
+          <dt>Last success</dt>
+          <dd id="last-success">Never</dd>
+        </div>
+        <div>
+          <dt>Last fallback</dt>
+          <dd id="last-fallback">Never</dd>
+        </div>
+        <div>
+          <dt>Last error</dt>
+          <dd id="last-error">None</dd>
+        </div>
+      </dl>
+    </section>
+  </main>
+
+  <script type="module" src="options.js"></script>
+</body>
+</html>
