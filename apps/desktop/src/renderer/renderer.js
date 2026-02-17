@@ -1,7 +1,8 @@
 const state = {
   downloads: [],
   contextTargetId: null,
-  unsubscribeDownloads: null
+  unsubscribeDownloads: null,
+  theme: null
 };
 
 const elements = {
@@ -12,8 +13,49 @@ const elements = {
   cancelButton: null,
   downloadList: null,
   emptyState: null,
-  contextMenu: null
+  contextMenu: null,
+  themeToggle: null
 };
+
+const THEME_DARK = 'dark';
+const THEME_LIGHT = 'light';
+const THEME_STORAGE_KEY = 'just-download:theme';
+const DEFAULT_THEME = THEME_DARK;
+
+function getNextTheme(theme) {
+  return theme === THEME_LIGHT ? THEME_DARK : THEME_LIGHT;
+}
+
+function applyTheme(nextTheme) {
+  const resolvedTheme = nextTheme === THEME_LIGHT ? THEME_LIGHT : THEME_DARK;
+  state.theme = resolvedTheme;
+  document.body.dataset.theme = resolvedTheme;
+
+  if (elements.themeToggle) {
+    const nextLabelTheme = getNextTheme(resolvedTheme);
+    const label = `Switch to ${nextLabelTheme} mode`;
+    elements.themeToggle.setAttribute('aria-label', label);
+    elements.themeToggle.title = label;
+  }
+
+  try {
+    window.localStorage.setItem(THEME_STORAGE_KEY, resolvedTheme);
+  } catch (_error) {}
+}
+
+function initializeTheme() {
+  let savedTheme = null;
+
+  try {
+    savedTheme = window.localStorage.getItem(THEME_STORAGE_KEY);
+  } catch (_error) {}
+
+  applyTheme(savedTheme || DEFAULT_THEME);
+}
+
+function toggleTheme() {
+  applyTheme(getNextTheme(state.theme || DEFAULT_THEME));
+}
 
 function formatBytes(bytes) {
   if (!Number.isFinite(bytes) || bytes <= 0) {
@@ -100,7 +142,7 @@ function getActionsMarkup(download) {
 
 function createDownloadItem(download) {
   const item = document.createElement('article');
-  item.className = 'download-item';
+  item.className = `download-item state-${download.status || 'unknown'}`;
   item.dataset.id = download.id;
 
   const progress = getProgress(download);
@@ -268,6 +310,7 @@ function bindEvents() {
   elements.addButton.addEventListener('click', showUrlDialog);
   elements.cancelButton.addEventListener('click', hideUrlDialog);
   elements.startButton.addEventListener('click', startDownloadFromInput);
+  elements.themeToggle.addEventListener('click', toggleTheme);
 
   elements.urlInput.addEventListener('keydown', (event) => {
     if (event.key === 'Enter') {
@@ -309,10 +352,12 @@ function cacheElements() {
   elements.downloadList = document.getElementById('download-list');
   elements.emptyState = document.getElementById('empty-state');
   elements.contextMenu = document.getElementById('context-menu');
+  elements.themeToggle = document.getElementById('theme-toggle');
 }
 
 async function initialize() {
   cacheElements();
+  initializeTheme();
 
   const missingElement = Object.entries(elements).find(([, value]) => !value);
   if (missingElement) {
