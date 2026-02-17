@@ -1,19 +1,18 @@
 {
   "name": "just-download",
   "version": "1.0.0",
-  "main": "src/main/main.js",
+  "private": true,
+  "workspaces": [
+    "apps/*"
+  ],
   "scripts": {
-    "start": "electron .",
-    "dev": "electron ."
-  },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
-  "description": "A simple download manager with multipart download and pause/resume",
-  "dependencies": {
-    "electron-store": "^11.0.2"
+    "start": "npm run -w @just-download/desktop start",
+    "dev": "npm run -w @just-download/desktop dev",
+    "build": "lage build --allow-no-target-runs",
+    "test": "lage test --allow-no-target-runs",
+    "lint": "lage lint --allow-no-target-runs"
   },
   "devDependencies": {
-    "electron": "^40.4.1"
+    "lage": "^2.14.18"
   }
 }
