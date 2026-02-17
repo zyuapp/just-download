@@ -19,25 +19,45 @@ const PROGRESS_SYNC_INTERVAL_MS = 250;
 const APP_ICON_SVG = `
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" fill="none">
   <defs>
-    <linearGradient id="icon-bg" x1="80" y1="64" x2="432" y2="448" gradientUnits="userSpaceOnUse">
-      <stop offset="0" stop-color="#2A56F5" />
-      <stop offset="0.52" stop-color="#1E9CFF" />
-      <stop offset="1" stop-color="#23D3A8" />
+    <linearGradient id="icon-bg" x1="26" y1="486" x2="486" y2="26" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#38BCFA" />
+      <stop offset="0.5" stop-color="#1C75E3" />
+      <stop offset="1" stop-color="#0A2D75" />
     </linearGradient>
-    <linearGradient id="icon-glyph" x1="256" y1="132" x2="256" y2="382" gradientUnits="userSpaceOnUse">
-      <stop offset="0" stop-color="#FFFFFF" />
-      <stop offset="1" stop-color="#DFF1FF" />
+    <radialGradient id="icon-glow" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(182 146) rotate(90) scale(267)">
+      <stop offset="0" stop-color="#BAEBFF" stop-opacity="0.52" />
+      <stop offset="1" stop-color="#63ABFF" stop-opacity="0" />
     </linearGradient>
-    <filter id="icon-shadow" x="106" y="100" width="300" height="310" color-interpolation-filters="sRGB">
-      <feDropShadow dx="0" dy="14" stdDeviation="14" flood-color="#07204A" flood-opacity="0.28" />
+    <radialGradient id="icon-shade" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(394 387) rotate(-140) scale(377)">
+      <stop offset="0" stop-color="#052866" stop-opacity="0" />
+      <stop offset="1" stop-color="#031D5B" stop-opacity="0.4" />
+    </radialGradient>
+    <radialGradient id="icon-orb" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(234 235) scale(133)">
+      <stop offset="0" stop-color="#ABD7FF" stop-opacity="0.44" />
+      <stop offset="0.55" stop-color="#61A4FC" stop-opacity="0.18" />
+      <stop offset="1" stop-color="#3162D3" stop-opacity="0" />
+    </radialGradient>
+    <linearGradient id="icon-glyph" x1="256" y1="155" x2="256" y2="348" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#FCFDFF" stop-opacity="0.98" />
+      <stop offset="1" stop-color="#C4E8FF" stop-opacity="0.92" />
+    </linearGradient>
+    <filter id="glyph-shadow" x="170" y="144" width="172" height="236" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="6" stdDeviation="8" flood-color="#063D86" flood-opacity="0.42" />
     </filter>
   </defs>
-  <rect x="40" y="40" width="432" height="432" rx="120" fill="url(#icon-bg)" />
-  <path d="M112 78C189 46 322 43 401 95C427 112 446 137 457 166V40H40V157C55 126 80 95 112 78Z" fill="#FFFFFF" fill-opacity="0.14" />
-  <g filter="url(#icon-shadow)">
-    <path d="M256 132C272.569 132 286 145.431 286 162V285.758L332.787 238.971C344.502 227.256 363.498 227.256 375.213 238.971C386.929 250.687 386.929 269.683 375.213 281.398L277.213 379.398C265.498 391.114 246.502 391.114 234.787 379.398L136.787 281.398C125.071 269.683 125.071 250.687 136.787 238.971C148.502 227.256 167.498 227.256 179.213 238.971L226 285.758V162C226 145.431 239.431 132 256 132Z" fill="url(#icon-glyph)" />
-    <rect x="156" y="350" width="200" height="34" rx="17" fill="#FFFFFF" fill-opacity="0.92" />
-    <rect x="171" y="359" width="170" height="16" rx="8" fill="#2F67F0" fill-opacity="0.28" />
+  <rect x="26" y="26" width="460" height="460" rx="123" fill="url(#icon-bg)" />
+  <rect x="26" y="26" width="460" height="460" rx="123" fill="url(#icon-glow)" />
+  <path d="M26 84C106 28 290 14 410 62C446 76 472 100 486 128V26H26V84Z" fill="#FFFFFF" fill-opacity="0.15" />
+  <rect x="26" y="26" width="460" height="460" rx="123" fill="url(#icon-shade)" />
+  <rect x="26" y="26" width="460" height="460" rx="123" stroke="#03163E" stroke-opacity="0.55" stroke-width="3" />
+  <rect x="36" y="36" width="440" height="440" rx="111" stroke="#FFFFFF" stroke-opacity="0.15" stroke-width="2" />
+  <circle cx="256" cy="246" r="110" fill="url(#icon-orb)" />
+  <circle cx="256" cy="246" r="110" stroke="#FFFFFF" stroke-opacity="0.2" stroke-width="2" />
+  <g filter="url(#glyph-shadow)">
+    <path d="M235 155H277V257H319L256 348L193 257H235V155Z" fill="url(#icon-glyph)" />
+    <path d="M235 155H277V257H319L256 348L193 257H235V155Z" stroke="#FFFFFF" stroke-opacity="0.72" stroke-width="2" />
+    <rect x="182" y="339" width="148" height="28" rx="14" fill="#FFFFFF" fill-opacity="0.9" />
+    <rect x="194" y="347" width="124" height="12" rx="6" fill="#2D69D8" fill-opacity="0.26" />
   </g>
 </svg>
 `.trim();

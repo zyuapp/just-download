@@ -26,9 +26,9 @@ let iconSpecs: [IconSpec] = [
 
 func drawIcon(size: CGFloat, in context: CGContext) {
   let canvas = CGRect(x: 0, y: 0, width: size, height: size)
-  let inset = size * 0.04
+  let inset = size * 0.05
   let cardRect = canvas.insetBy(dx: inset, dy: inset)
-  let cornerRadius = size * 0.235
+  let cornerRadius = size * 0.24
 
   let backgroundPath = CGPath(
     roundedRect: cardRect,
@@ -44,11 +44,11 @@ func drawIcon(size: CGFloat, in context: CGContext) {
   if let gradient = CGGradient(
     colorsSpace: CGColorSpaceCreateDeviceRGB(),
     colors: [
-      NSColor(calibratedRed: 0.16, green: 0.34, blue: 0.96, alpha: 1).cgColor,
-      NSColor(calibratedRed: 0.12, green: 0.61, blue: 1.0, alpha: 1).cgColor,
-      NSColor(calibratedRed: 0.14, green: 0.83, blue: 0.66, alpha: 1).cgColor
+      NSColor(calibratedRed: 0.22, green: 0.74, blue: 0.98, alpha: 1).cgColor,
+      NSColor(calibratedRed: 0.11, green: 0.46, blue: 0.89, alpha: 1).cgColor,
+      NSColor(calibratedRed: 0.04, green: 0.18, blue: 0.46, alpha: 1).cgColor
     ] as CFArray,
-    locations: [0.0, 0.55, 1.0]
+    locations: [0.0, 0.5, 1.0]
   ) {
     context.drawLinearGradient(
       gradient,
@@ -58,57 +58,156 @@ func drawIcon(size: CGFloat, in context: CGContext) {
     )
   }
 
+  let glowCenter = CGPoint(
+    x: cardRect.minX + cardRect.width * 0.34,
+    y: cardRect.minY + cardRect.height * 0.74
+  )
+  if let glowGradient = CGGradient(
+    colorsSpace: CGColorSpaceCreateDeviceRGB(),
+    colors: [
+      NSColor(calibratedRed: 0.73, green: 0.92, blue: 1.0, alpha: 0.52).cgColor,
+      NSColor(calibratedRed: 0.39, green: 0.67, blue: 1.0, alpha: 0.0).cgColor
+    ] as CFArray,
+    locations: [0.0, 1.0]
+  ) {
+    context.drawRadialGradient(
+      glowGradient,
+      startCenter: glowCenter,
+      startRadius: 0,
+      endCenter: glowCenter,
+      endRadius: cardRect.width * 0.58,
+      options: .drawsAfterEndLocation
+    )
+  }
+
   let highlightPath = CGMutablePath()
   highlightPath.move(to: CGPoint(x: cardRect.minX, y: cardRect.maxY - cardRect.height * 0.06))
   highlightPath.addCurve(
-    to: CGPoint(x: cardRect.maxX, y: cardRect.maxY - cardRect.height * 0.30),
-    control1: CGPoint(x: cardRect.minX + cardRect.width * 0.20, y: cardRect.maxY + cardRect.height * 0.10),
-    control2: CGPoint(x: cardRect.maxX - cardRect.width * 0.16, y: cardRect.maxY + cardRect.height * 0.00)
+    to: CGPoint(x: cardRect.maxX, y: cardRect.maxY - cardRect.height * 0.24),
+    control1: CGPoint(x: cardRect.minX + cardRect.width * 0.14, y: cardRect.maxY + cardRect.height * 0.10),
+    control2: CGPoint(x: cardRect.maxX - cardRect.width * 0.16, y: cardRect.maxY + cardRect.height * 0.01)
   )
   highlightPath.addLine(to: CGPoint(x: cardRect.maxX, y: cardRect.maxY))
   highlightPath.addLine(to: CGPoint(x: cardRect.minX, y: cardRect.maxY))
   highlightPath.closeSubpath()
 
   context.addPath(highlightPath)
-  context.setFillColor(NSColor(calibratedWhite: 1.0, alpha: 0.16).cgColor)
+  context.setFillColor(NSColor(calibratedWhite: 1.0, alpha: 0.15).cgColor)
   context.fillPath()
+
+  let shadeCenter = CGPoint(
+    x: cardRect.minX + cardRect.width * 0.8,
+    y: cardRect.minY + cardRect.height * 0.14
+  )
+  if let shadeGradient = CGGradient(
+    colorsSpace: CGColorSpaceCreateDeviceRGB(),
+    colors: [
+      NSColor(calibratedRed: 0.02, green: 0.13, blue: 0.40, alpha: 0.0).cgColor,
+      NSColor(calibratedRed: 0.01, green: 0.10, blue: 0.31, alpha: 0.40).cgColor
+    ] as CFArray,
+    locations: [0.0, 1.0]
+  ) {
+    context.drawRadialGradient(
+      shadeGradient,
+      startCenter: shadeCenter,
+      startRadius: 0,
+      endCenter: shadeCenter,
+      endRadius: cardRect.width * 0.82,
+      options: .drawsAfterEndLocation
+    )
+  }
 
   context.restoreGState()
 
   context.addPath(backgroundPath)
-  context.setStrokeColor(NSColor(calibratedWhite: 1.0, alpha: 0.24).cgColor)
-  context.setLineWidth(max(1.0, size * 0.008))
+  context.setStrokeColor(NSColor(calibratedRed: 0.01, green: 0.09, blue: 0.28, alpha: 0.55).cgColor)
+  context.setLineWidth(max(1.0, size * 0.007))
+  context.strokePath()
+
+  let innerBorderRect = cardRect.insetBy(dx: cardRect.width * 0.02, dy: cardRect.height * 0.02)
+  let innerBorderPath = CGPath(
+    roundedRect: innerBorderRect,
+    cornerWidth: cornerRadius * 0.90,
+    cornerHeight: cornerRadius * 0.90,
+    transform: nil
+  )
+  context.addPath(innerBorderPath)
+  context.setStrokeColor(NSColor(calibratedWhite: 1.0, alpha: 0.15).cgColor)
+  context.setLineWidth(max(0.8, size * 0.003))
+  context.strokePath()
+
+  let orbRect = CGRect(
+    x: cardRect.midX - cardRect.width * 0.24,
+    y: cardRect.midY - cardRect.height * 0.22,
+    width: cardRect.width * 0.48,
+    height: cardRect.height * 0.48
+  )
+
+  context.saveGState()
+  context.setShadow(
+    offset: CGSize(width: 0, height: -size * 0.008),
+    blur: size * 0.03,
+    color: NSColor(calibratedRed: 0.01, green: 0.08, blue: 0.26, alpha: 0.34).cgColor
+  )
+  context.addEllipse(in: orbRect)
+  context.clip()
+
+  if let orbGradient = CGGradient(
+    colorsSpace: CGColorSpaceCreateDeviceRGB(),
+    colors: [
+      NSColor(calibratedRed: 0.67, green: 0.86, blue: 1.0, alpha: 0.44).cgColor,
+      NSColor(calibratedRed: 0.38, green: 0.64, blue: 0.99, alpha: 0.18).cgColor,
+      NSColor(calibratedRed: 0.19, green: 0.37, blue: 0.80, alpha: 0.0).cgColor
+    ] as CFArray,
+    locations: [0.0, 0.55, 1.0]
+  ) {
+    let orbCenter = CGPoint(x: orbRect.midX - orbRect.width * 0.1, y: orbRect.midY + orbRect.height * 0.1)
+    context.drawRadialGradient(
+      orbGradient,
+      startCenter: orbCenter,
+      startRadius: 0,
+      endCenter: CGPoint(x: orbRect.midX, y: orbRect.midY),
+      endRadius: orbRect.width * 0.6,
+      options: .drawsAfterEndLocation
+    )
+  }
+
+  context.restoreGState()
+
+  context.addEllipse(in: orbRect)
+  context.setStrokeColor(NSColor(calibratedWhite: 1.0, alpha: 0.2).cgColor)
+  context.setLineWidth(max(0.8, size * 0.004))
   context.strokePath()
 
   let glyphRect = CGRect(
-    x: cardRect.minX + cardRect.width * 0.20,
-    y: cardRect.minY + cardRect.height * 0.18,
-    width: cardRect.width * 0.60,
-    height: cardRect.height * 0.62
+    x: cardRect.minX + cardRect.width * 0.31,
+    y: cardRect.minY + cardRect.height * 0.28,
+    width: cardRect.width * 0.38,
+    height: cardRect.height * 0.42
   )
 
   let centerX = glyphRect.midX
   let shaftTop = glyphRect.maxY
-  let headY = glyphRect.minY + glyphRect.height * 0.42
-  let tipY = glyphRect.minY + glyphRect.height * 0.06
-  let shaftHalfWidth = glyphRect.width * 0.11
-  let headHalfWidth = glyphRect.width * 0.31
+  let shaftBottom = glyphRect.minY + glyphRect.height * 0.47
+  let tipY = glyphRect.minY
+  let shaftHalfWidth = glyphRect.width * 0.12
+  let headHalfWidth = glyphRect.width * 0.36
 
   let arrowPath = CGMutablePath()
   arrowPath.move(to: CGPoint(x: centerX - shaftHalfWidth, y: shaftTop))
   arrowPath.addLine(to: CGPoint(x: centerX + shaftHalfWidth, y: shaftTop))
-  arrowPath.addLine(to: CGPoint(x: centerX + shaftHalfWidth, y: headY))
-  arrowPath.addLine(to: CGPoint(x: centerX + headHalfWidth, y: headY))
+  arrowPath.addLine(to: CGPoint(x: centerX + shaftHalfWidth, y: shaftBottom))
+  arrowPath.addLine(to: CGPoint(x: centerX + headHalfWidth, y: shaftBottom))
   arrowPath.addLine(to: CGPoint(x: centerX, y: tipY))
-  arrowPath.addLine(to: CGPoint(x: centerX - headHalfWidth, y: headY))
-  arrowPath.addLine(to: CGPoint(x: centerX - shaftHalfWidth, y: headY))
+  arrowPath.addLine(to: CGPoint(x: centerX - headHalfWidth, y: shaftBottom))
+  arrowPath.addLine(to: CGPoint(x: centerX - shaftHalfWidth, y: shaftBottom))
   arrowPath.closeSubpath()
 
   context.saveGState()
   context.setShadow(
-    offset: CGSize(width: 0, height: -size * 0.018),
-    blur: size * 0.05,
-    color: NSColor(calibratedRed: 0.03, green: 0.13, blue: 0.30, alpha: 0.32).cgColor
+    offset: CGSize(width: 0, height: -size * 0.012),
+    blur: size * 0.04,
+    color: NSColor(calibratedRed: 0.02, green: 0.14, blue: 0.42, alpha: 0.42).cgColor
   )
   context.addPath(arrowPath)
   context.clip()
@@ -116,8 +215,8 @@ func drawIcon(size: CGFloat, in context: CGContext) {
   if let glyphGradient = CGGradient(
     colorsSpace: CGColorSpaceCreateDeviceRGB(),
     colors: [
-      NSColor(calibratedWhite: 1.0, alpha: 1).cgColor,
-      NSColor(calibratedRed: 0.87, green: 0.95, blue: 1.0, alpha: 1).cgColor
+      NSColor(calibratedRed: 0.98, green: 0.99, blue: 1.0, alpha: 0.98).cgColor,
+      NSColor(calibratedRed: 0.77, green: 0.92, blue: 1.0, alpha: 0.92).cgColor
     ] as CFArray,
     locations: [0.0, 1.0]
   ) {
@@ -132,15 +231,15 @@ func drawIcon(size: CGFloat, in context: CGContext) {
   context.restoreGState()
 
   context.addPath(arrowPath)
-  context.setStrokeColor(NSColor(calibratedWhite: 1.0, alpha: 0.46).cgColor)
-  context.setLineWidth(max(0.8, size * 0.006))
+  context.setStrokeColor(NSColor(calibratedWhite: 1.0, alpha: 0.72).cgColor)
+  context.setLineWidth(max(0.9, size * 0.004))
   context.strokePath()
 
   let trayRect = CGRect(
-    x: cardRect.midX - cardRect.width * 0.23,
-    y: cardRect.minY + cardRect.height * 0.15,
-    width: cardRect.width * 0.46,
-    height: cardRect.height * 0.085
+    x: cardRect.midX - cardRect.width * 0.16,
+    y: cardRect.minY + cardRect.height * 0.22,
+    width: cardRect.width * 0.32,
+    height: cardRect.height * 0.06
   )
   let trayPath = CGPath(
     roundedRect: trayRect,
@@ -149,18 +248,18 @@ func drawIcon(size: CGFloat, in context: CGContext) {
     transform: nil
   )
   context.addPath(trayPath)
-  context.setFillColor(NSColor(calibratedWhite: 1.0, alpha: 0.92).cgColor)
+  context.setFillColor(NSColor(calibratedWhite: 1.0, alpha: 0.90).cgColor)
   context.fillPath()
 
-  let innerRect = trayRect.insetBy(dx: trayRect.width * 0.08, dy: trayRect.height * 0.26)
-  let innerPath = CGPath(
-    roundedRect: innerRect,
-    cornerWidth: innerRect.height / 2,
-    cornerHeight: innerRect.height / 2,
+  let trayInnerRect = trayRect.insetBy(dx: trayRect.width * 0.08, dy: trayRect.height * 0.28)
+  let trayInnerPath = CGPath(
+    roundedRect: trayInnerRect,
+    cornerWidth: trayInnerRect.height / 2,
+    cornerHeight: trayInnerRect.height / 2,
     transform: nil
   )
-  context.addPath(innerPath)
-  context.setFillColor(NSColor(calibratedRed: 0.19, green: 0.40, blue: 0.94, alpha: 0.28).cgColor)
+  context.addPath(trayInnerPath)
+  context.setFillColor(NSColor(calibratedRed: 0.18, green: 0.41, blue: 0.85, alpha: 0.26).cgColor)
   context.fillPath()
 }
 
