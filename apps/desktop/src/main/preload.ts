@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron';
 
-import type { DownloadRecord, ElectronAPI } from '../shared/types';
+import type { DraftDownloadRequest, DownloadRecord, ElectronAPI } from '../shared/types';
 
 const electronAPI: ElectronAPI = {
   startDownload: (url) => ipcRenderer.invoke('download:start', url),
@@ -12,6 +12,20 @@ const electronAPI: ElectronAPI = {
   openFile: (id) => ipcRenderer.invoke('download:open', id),
   openFolder: (id) => ipcRenderer.invoke('download:open-folder', id),
   getDownloads: () => ipcRenderer.invoke('downloads:get'),
+  onDraftRequested: (callback) => {
+    const listener = (_event: Electron.IpcRendererEvent, payload: DraftDownloadRequest) => {
+      callback(payload);
+    };
+
+    ipcRenderer.on('download:draft', listener);
+
+    return () => {
+      ipcRenderer.removeListener('download:draft', listener);
+    };
+  },
+  notifyRendererReady: () => {
+    ipcRenderer.send('renderer:ready');
+  },
   onDownloadsChanged: (callback) => {
     const listener = (_event: Electron.IpcRendererEvent, payload: DownloadRecord[]) => {
       callback(payload);

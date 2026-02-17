@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Just Download Bridge",
-  "description": "Intercept Chrome downloads and hand off to the Just Download desktop app.",
+  "description": "Intercept Chrome downloads, open Just Download, and prefill a desktop download draft.",
   "version": "0.1.0",
   "permissions": [
     "downloads",

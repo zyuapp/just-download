@@ -5,6 +5,7 @@ interface RendererState {
   downloadSpeeds: Map<string, DownloadSpeedState>;
   contextTargetId: string | null;
   unsubscribeDownloads: (() => void) | null;
+  unsubscribeDrafts: (() => void) | null;
   theme: Theme | null;
 }
 
@@ -33,6 +34,7 @@ const state: RendererState = {
   downloadSpeeds: new Map(),
   contextTargetId: null,
   unsubscribeDownloads: null,
+  unsubscribeDrafts: null,
   theme: null
 };
 
@@ -386,9 +388,13 @@ function renderDownloads(): void {
   }
 }
 
-function showUrlDialog(): void {
+function showUrlDialog(prefilledUrl = ''): void {
   if (!elements.urlDialog || !elements.urlInput) {
     return;
+  }
+
+  if (typeof prefilledUrl === 'string' && prefilledUrl.trim()) {
+    elements.urlInput.value = prefilledUrl.trim();
   }
 
   elements.urlDialog.classList.remove('hidden');
@@ -501,7 +507,9 @@ function bindEvents(): void {
     return;
   }
 
-  elements.addButton.addEventListener('click', showUrlDialog);
+  elements.addButton.addEventListener('click', () => {
+    showUrlDialog();
+  });
   elements.urlDialogBackdrop.addEventListener('click', hideUrlDialog);
   elements.cancelButton.addEventListener('click', hideUrlDialog);
   elements.startButton.addEventListener('click', () => {
@@ -597,6 +605,21 @@ async function initialize(): Promise<void> {
 
   bindEvents();
 
+  state.unsubscribeDrafts = getAPI().onDraftRequested((draft) => {
+    if (!draft || typeof draft.url !== 'string') {
+      return;
+    }
+
+    const normalizedUrl = draft.url.trim();
+    if (!normalizedUrl) {
+      return;
+    }
+
+    showUrlDialog(normalizedUrl);
+  });
+
+  getAPI().notifyRendererReady();
+
   state.unsubscribeDownloads = getAPI().onDownloadsChanged((nextDownloads) => {
     state.downloads = Array.isArray(nextDownloads) ? nextDownloads : [];
     updateDownloadSpeeds(state.downloads);
@@ -613,5 +636,9 @@ window.addEventListener('DOMContentLoaded', () => {
 window.addEventListener('beforeunload', () => {
   if (typeof state.unsubscribeDownloads === 'function') {
     state.unsubscribeDownloads();
+  }
+
+  if (typeof state.unsubscribeDrafts === 'function') {
+    state.unsubscribeDrafts();
   }
 });

@@ -23,6 +23,13 @@ export interface DownloadRecord {
   completedAt: number | null;
 }
 
+export interface DraftDownloadRequest {
+  url: string;
+  source: string | null;
+  requestId: string | null;
+  createdAt: number;
+}
+
 export interface ElectronAPI {
   startDownload: (url: string) => Promise<DownloadRecord>;
   pauseDownload: (id: string) => Promise<void>;
@@ -33,5 +40,7 @@ export interface ElectronAPI {
   openFile: (id: string) => Promise<void>;
   openFolder: (id: string) => Promise<void>;
   getDownloads: () => Promise<DownloadRecord[]>;
+  onDraftRequested: (callback: (draft: DraftDownloadRequest) => void) => () => void;
+  notifyRendererReady: () => void;
   onDownloadsChanged: (callback: (downloads: DownloadRecord[]) => void) => () => void;
 }

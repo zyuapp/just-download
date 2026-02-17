@@ -7,6 +7,13 @@ const DEFAULT_SETTINGS = Object.freeze({
   requestTimeoutMs: 4000
 });
 
+const DESKTOP_LAUNCH_URL = 'justdownload://open?source=chrome-extension';
+const DESKTOP_STARTUP_TIMEOUT_MS = 12000;
+const DESKTOP_HEALTH_POLL_INTERVAL_MS = 300;
+const DESKTOP_HEALTH_TIMEOUT_MS = 1500;
+const DESKTOP_LAUNCH_TAB_GC_DELAY_MS = 25000;
+const DESKTOP_LAUNCH_COOLDOWN_MS = 2000;
+
 const DEFAULT_STATS = Object.freeze({
   interceptedCount: 0,
   fallbackCount: 0,
@@ -17,6 +24,7 @@ const DEFAULT_STATS = Object.freeze({
 
 let settingsCache = { ...DEFAULT_SETTINGS };
 const activeInterceptions = new Set();
+let lastDesktopLaunchAt = 0;
 
 function normalizeSettings(value) {
   const next = value && typeof value === 'object' ? value : {};
@@ -73,6 +81,12 @@ function generateRequestId(downloadId) {
     : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
 
   return `jd-${downloadId}-${suffix}`;
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
 }
 
 function decodeURIComponentSafe(value) {
@@ -225,6 +239,34 @@ function eraseDownload(downloadId) {
   });
 }
 
+function createTab(createProperties) {
+  return new Promise((resolve, reject) => {
+    chrome.tabs.create(createProperties, (tab) => {
+      const runtimeError = chrome.runtime.lastError;
+      if (runtimeError) {
+        reject(new Error(runtimeError.message));
+        return;
+      }
+
+      resolve(tab || null);
+    });
+  });
+}
+
+function removeTab(tabId) {
+  return new Promise((resolve, reject) => {
+    chrome.tabs.remove(tabId, () => {
+      const runtimeError = chrome.runtime.lastError;
+      if (runtimeError) {
+        reject(new Error(runtimeError.message));
+        return;
+      }
+
+      resolve();
+    });
+  });
+}
+
 async function safeResumeDownload(downloadId) {
   try {
     await resumeDownload(downloadId);
@@ -244,6 +286,14 @@ async function safeCancelDownload(downloadId) {
 async function safeEraseDownload(downloadId) {
   try {
     await eraseDownload(downloadId);
+  } catch {
+    // best effort cleanup
+  }
+}
+
+async function safeRemoveTab(tabId) {
+  try {
+    await removeTab(tabId);
   } catch {
     // best effort cleanup
   }
@@ -291,6 +341,84 @@ async function safeReadResponse(response) {
   } catch {
     return '';
   }
+}
+
+async function checkDesktopBridgeHealth() {
+  const timeoutController = new AbortController();
+  const timeoutId = setTimeout(() => {
+    timeoutController.abort();
+  }, Math.min(settingsCache.requestTimeoutMs, DESKTOP_HEALTH_TIMEOUT_MS));
+
+  try {
+    const response = await fetch(`${settingsCache.bridgeBaseUrl}/v1/health`, {
+      method: 'GET',
+      signal: timeoutController.signal
+    });
+
+    return response.ok;
+  } catch {
+    return false;
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
+async function launchDesktopApp() {
+  const now = Date.now();
+  if (now - lastDesktopLaunchAt < DESKTOP_LAUNCH_COOLDOWN_MS) {
+    return null;
+  }
+
+  lastDesktopLaunchAt = now;
+
+  try {
+    const tab = await createTab({
+      url: DESKTOP_LAUNCH_URL,
+      active: false
+    });
+
+    const tabId = tab && Number.isInteger(tab.id) ? tab.id : null;
+
+    if (Number.isInteger(tabId)) {
+      setTimeout(() => {
+        void safeRemoveTab(tabId);
+      }, DESKTOP_LAUNCH_TAB_GC_DELAY_MS);
+    }
+
+    return tabId;
+  } catch {
+    return null;
+  }
+}
+
+async function waitForDesktopBridge() {
+  const deadline = Date.now() + DESKTOP_STARTUP_TIMEOUT_MS;
+
+  while (Date.now() < deadline) {
+    const reachable = await checkDesktopBridgeHealth();
+    if (reachable) {
+      return true;
+    }
+
+    await sleep(DESKTOP_HEALTH_POLL_INTERVAL_MS);
+  }
+
+  return false;
+}
+
+async function ensureDesktopBridgeAvailable() {
+  if (await checkDesktopBridgeHealth()) {
+    return true;
+  }
+
+  const launchTabId = await launchDesktopApp();
+  const bridgeAvailable = await waitForDesktopBridge();
+
+  if (bridgeAvailable && Number.isInteger(launchTabId)) {
+    void safeRemoveTab(launchTabId);
+  }
+
+  return bridgeAvailable;
 }
 
 async function handoffToDesktop(payload) {
@@ -359,10 +487,16 @@ async function interceptDownload(downloadItem) {
   try {
     await pauseDownload(downloadId);
 
+    const bridgeAvailable = await ensureDesktopBridgeAvailable();
+    if (!bridgeAvailable) {
+      throw new Error('Desktop app did not become ready in time.');
+    }
+
     const requestId = generateRequestId(downloadId);
     const accepted = await handoffToDesktop({
       url: normalizedRequest.url,
       requestId,
+      mode: 'draft',
       source: 'chrome-extension',
       referrer: typeof downloadItem.referrer === 'string' ? downloadItem.referrer : null,
       filenameHint: extractFilenameHint(downloadItem.filename),

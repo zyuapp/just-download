@@ -23,6 +23,10 @@ const BRIDGE_HEALTH_PATH = '/v1/health';
 const BRIDGE_MAX_BODY_BYTES = 32 * 1024;
 const BRIDGE_REQUEST_TTL_MS = 5 * 60 * 1000;
 const MAX_AUTH_FIELD_LENGTH = 1024;
+const APP_PROTOCOL_SCHEME = 'justdownload';
+const BRIDGE_MODE_START = 'start';
+const BRIDGE_MODE_DRAFT = 'draft';
+const MAX_DRAFT_QUEUE_SIZE = 20;
 
 const APP_ICON_SVG = `
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" fill="none">
@@ -88,6 +92,7 @@ let mainWindow = null;
 let tray = null;
 let isQuitting = false;
 let bridgeServer = null;
+let isRendererReady = false;
 
 let store = null;
 let downloads = [];
@@ -98,6 +103,8 @@ let partialsDir = '';
 const activeDownloads = new Map();
 const progressTimers = new Map();
 const bridgeRequestCache = new Map();
+const pendingDraftRequests = [];
+const pendingProtocolUrls = [];
 
 function ensureDirectory(dirPath) {
   fs.mkdirSync(dirPath, { recursive: true });
@@ -197,6 +204,155 @@ function notifyDownloadsChanged() {
     return;
   }
   mainWindow.webContents.send('downloads:changed', publicDownloads());
+}
+
+function showMainWindow() {
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    createWindow();
+  }
+
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    return;
+  }
+
+  if (!mainWindow.isVisible()) {
+    mainWindow.show();
+  }
+
+  mainWindow.focus();
+}
+
+function flushPendingDraftRequests() {
+  if (!isRendererReady || !mainWindow || mainWindow.isDestroyed()) {
+    return;
+  }
+
+  while (pendingDraftRequests.length > 0) {
+    const nextRequest = pendingDraftRequests.shift();
+    if (!nextRequest) {
+      continue;
+    }
+
+    try {
+      mainWindow.webContents.send('download:draft', nextRequest);
+    } catch {
+      pendingDraftRequests.unshift(nextRequest);
+      isRendererReady = false;
+      return;
+    }
+  }
+}
+
+function queueDraftRequest(url, metadata: { source?: string | null; requestId?: string | null } = {}) {
+  const normalizedUrl = typeof url === 'string' ? url.trim() : '';
+  if (!normalizedUrl) {
+    return;
+  }
+
+  pendingDraftRequests.push({
+    url: normalizedUrl,
+    source: typeof metadata.source === 'string' && metadata.source ? metadata.source : null,
+    requestId: typeof metadata.requestId === 'string' && metadata.requestId ? metadata.requestId : null,
+    createdAt: Date.now()
+  });
+
+  while (pendingDraftRequests.length > MAX_DRAFT_QUEUE_SIZE) {
+    pendingDraftRequests.shift();
+  }
+
+  showMainWindow();
+  flushPendingDraftRequests();
+}
+
+function extractProtocolUrlFromArgv(argv: string[]) {
+  const protocolPrefix = `${APP_PROTOCOL_SCHEME}://`;
+
+  for (const value of argv) {
+    if (typeof value !== 'string') {
+      continue;
+    }
+
+    if (value.toLowerCase().startsWith(protocolPrefix)) {
+      return value;
+    }
+  }
+
+  return null;
+}
+
+function registerProtocolClient() {
+  let registered = false;
+
+  if (process.defaultApp && process.argv.length >= 2) {
+    const entryPath = path.resolve(process.argv[1]);
+    registered = app.setAsDefaultProtocolClient(APP_PROTOCOL_SCHEME, process.execPath, [entryPath]);
+  } else {
+    registered = app.setAsDefaultProtocolClient(APP_PROTOCOL_SCHEME);
+  }
+
+  if (!registered) {
+    console.warn(`[protocol] Unable to register ${APP_PROTOCOL_SCHEME}:// handler.`);
+  }
+}
+
+function handleProtocolUrl(rawUrl) {
+  if (typeof rawUrl !== 'string' || !rawUrl.trim()) {
+    return;
+  }
+
+  let parsed;
+  try {
+    parsed = new URL(rawUrl);
+  } catch {
+    return;
+  }
+
+  if (parsed.protocol !== `${APP_PROTOCOL_SCHEME}:`) {
+    return;
+  }
+
+  const action = (parsed.hostname || parsed.pathname.replace(/^\/+/, '') || 'open').toLowerCase();
+  if (action === 'download') {
+    const targetUrl = parsed.searchParams.get('url');
+    if (typeof targetUrl === 'string' && targetUrl.trim()) {
+      try {
+        const normalizedTarget = normalizeDownloadRequest(targetUrl).url;
+        queueDraftRequest(normalizedTarget, {
+          source: 'protocol',
+          requestId: null
+        });
+      } catch {
+        showMainWindow();
+      }
+      return;
+    }
+  }
+
+  showMainWindow();
+}
+
+function processPendingProtocolUrls() {
+  if (!app.isReady()) {
+    return;
+  }
+
+  while (pendingProtocolUrls.length > 0) {
+    const nextUrl = pendingProtocolUrls.shift();
+    if (!nextUrl) {
+      continue;
+    }
+
+    handleProtocolUrl(nextUrl);
+  }
+}
+
+function queueProtocolUrl(rawUrl) {
+  if (typeof rawUrl !== 'string' || !rawUrl.trim()) {
+    return;
+  }
+
+  pendingProtocolUrls.push(rawUrl.trim());
+  processPendingProtocolUrls();
 }
 
 function scheduleProgressSync(downloadId) {
@@ -667,6 +823,15 @@ function pruneBridgeRequestCache() {
   }
 }
 
+function normalizeBridgeMode(value) {
+  if (typeof value !== 'string') {
+    return BRIDGE_MODE_START;
+  }
+
+  const normalized = value.trim().toLowerCase();
+  return normalized === BRIDGE_MODE_DRAFT ? BRIDGE_MODE_DRAFT : BRIDGE_MODE_START;
+}
+
 function parseBridgePayload(payload) {
   if (!payload || typeof payload !== 'object') {
     throw new Error('Invalid payload.');
@@ -677,6 +842,7 @@ function parseBridgePayload(payload) {
   const source = typeof payload.source === 'string' ? payload.source.trim().slice(0, 100) : '';
   const referrer = typeof payload.referrer === 'string' ? payload.referrer.trim() : null;
   const filenameHint = typeof payload.filenameHint === 'string' ? payload.filenameHint.trim() : null;
+  const mode = normalizeBridgeMode(payload.mode);
   const auth = parseBridgeAuth(payload.auth);
 
   return {
@@ -685,6 +851,7 @@ function parseBridgePayload(payload) {
     source,
     referrer,
     filenameHint,
+    mode,
     auth
   };
 }
@@ -1465,7 +1632,32 @@ async function handleBridgeRequest(request, response) {
     sendBridgeJson(response, 200, {
       accepted: true,
       duplicate: true,
+      mode: cached && cached.mode ? cached.mode : BRIDGE_MODE_START,
       downloadId: cached ? cached.downloadId : null
+    });
+    return;
+  }
+
+  if (payload.mode === BRIDGE_MODE_DRAFT) {
+    queueDraftRequest(normalizedRequest.url, {
+      source: payload.source || 'bridge',
+      requestId: payload.requestId || null
+    });
+
+    if (payload.requestId) {
+      bridgeRequestCache.set(payload.requestId, {
+        mode: BRIDGE_MODE_DRAFT,
+        downloadId: null,
+        createdAt: Date.now()
+      });
+    }
+
+    sendBridgeJson(response, 202, {
+      accepted: true,
+      duplicate: false,
+      mode: BRIDGE_MODE_DRAFT,
+      queued: true,
+      downloadId: null
     });
     return;
   }
@@ -1477,6 +1669,7 @@ async function handleBridgeRequest(request, response) {
 
     if (payload.requestId) {
       bridgeRequestCache.set(payload.requestId, {
+        mode: BRIDGE_MODE_START,
         downloadId: record.id,
         createdAt: Date.now()
       });
@@ -1485,6 +1678,7 @@ async function handleBridgeRequest(request, response) {
     sendBridgeJson(response, 202, {
       accepted: true,
       duplicate: false,
+      mode: BRIDGE_MODE_START,
       downloadId: record.id
     });
   } catch (error) {
@@ -1549,6 +1743,8 @@ function stopBridgeServer() {
 function createWindow() {
   const appIcon = createAppIcon(256);
 
+  isRendererReady = false;
+
   mainWindow = new BrowserWindow({
     width: 900,
     height: 620,
@@ -1574,6 +1770,11 @@ function createWindow() {
       event.preventDefault();
       mainWindow.hide();
     }
+  });
+
+  mainWindow.on('closed', () => {
+    mainWindow = null;
+    isRendererReady = false;
   });
 }
 
@@ -1614,11 +1815,7 @@ function createTray() {
     {
       label: 'Show Window',
       click: () => {
-        if (!mainWindow || mainWindow.isDestroyed()) {
-          return;
-        }
-        mainWindow.show();
-        mainWindow.focus();
+        showMainWindow();
       }
     },
     { type: 'separator' },
@@ -1633,11 +1830,7 @@ function createTray() {
 
   tray.setContextMenu(menu);
   tray.on('double-click', () => {
-    if (!mainWindow || mainWindow.isDestroyed()) {
-      return;
-    }
-    mainWindow.show();
-    mainWindow.focus();
+    showMainWindow();
   });
 }
 
@@ -1654,6 +1847,11 @@ async function initializeStore() {
 
 function registerIpcHandlers() {
   ipcMain.handle('downloads:get', async () => publicDownloads());
+
+  ipcMain.on('renderer:ready', () => {
+    isRendererReady = true;
+    flushPendingDraftRequests();
+  });
 
   ipcMain.handle('download:start', async (_event, url) => startDownload(url));
 
@@ -1686,12 +1884,19 @@ function registerIpcHandlers() {
   });
 }
 
+app.on('open-url', (event, urlValue) => {
+  event.preventDefault();
+  queueProtocolUrl(urlValue);
+});
+
 app.whenReady().then(async () => {
   downloadsDir = app.getPath('downloads');
   partialsDir = path.join(app.getPath('userData'), 'partials');
 
   ensureDirectory(downloadsDir);
   ensureDirectory(partialsDir);
+
+  registerProtocolClient();
 
   await initializeStore();
   registerIpcHandlers();
@@ -1706,6 +1911,13 @@ app.whenReady().then(async () => {
 
   createWindow();
   createTray();
+
+  const startupProtocolUrl = extractProtocolUrlFromArgv(process.argv);
+  if (startupProtocolUrl) {
+    queueProtocolUrl(startupProtocolUrl);
+  }
+
+  processPendingProtocolUrls();
 
   notifyDownloadsChanged();
 });
@@ -1739,10 +1951,5 @@ app.on('window-all-closed', () => {
 });
 
 app.on('activate', () => {
-  if (BrowserWindow.getAllWindows().length === 0) {
-    createWindow();
-  } else if (mainWindow) {
-    mainWindow.show();
-    mainWindow.focus();
-  }
+  showMainWindow();
 });

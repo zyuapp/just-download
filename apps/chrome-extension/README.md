@@ -1,28 +1,33 @@
 # Just Download Chrome Extension
 
-This extension intercepts Chrome downloads and hands them to the desktop app via a local bridge.
+This extension intercepts Chrome downloads and opens the desktop app in a confirmation-first flow.
 
 ## What it does
 
 - Listens to `chrome.downloads.onCreated`.
 - Pauses each new HTTP/HTTPS download.
-- Sends the URL to the desktop app bridge: `POST http://127.0.0.1:17839/v1/downloads`.
-- If handoff succeeds, cancels and removes the Chrome download entry.
-- If handoff fails, resumes the original Chrome download (fail-open behavior).
+- Ensures the desktop app is available:
+  - checks `GET http://127.0.0.1:17839/v1/health`,
+  - if unavailable, triggers `justdownload://open` to launch/focus the app,
+  - waits for the local bridge to become ready.
+- Sends a draft handoff to `POST /v1/downloads` with `mode: "draft"`.
+- If draft handoff succeeds, cancels/removes the Chrome download entry.
+- If handoff fails at any step, resumes the original Chrome download (fail-open behavior).
 
 ## Desktop app integration
 
-The desktop app now starts a local bridge server on startup:
+The desktop app starts a local bridge server and accepts two modes:
 
-- Health endpoint: `GET /v1/health`
-- Download endpoint: `POST /v1/downloads`
+- `mode: "start"` (default): starts download immediately.
+- `mode: "draft"`: opens/focuses the app and prefills the URL dialog so the user can click **Download**.
 
-Expected payload:
+Draft payload example:
 
 ```json
 {
   "url": "https://example.com/file.zip",
   "requestId": "jd-123-uuid",
+  "mode": "draft",
   "source": "chrome-extension",
   "referrer": "https://example.com",
   "filenameHint": "file.zip",
@@ -35,8 +40,6 @@ Expected payload:
 ```
 
 `auth` is optional and only included when a link uses inline credentials (`https://user:pass@host/...`). The extension strips credentials from the URL before handoff.
-
-The desktop side validates the URL, deduplicates by `requestId`, and starts the existing download pipeline with request headers when auth is present.
 
 ## Local development
 
@@ -59,10 +62,12 @@ npm run dev:desktop
 - Click **Load unpacked**
 - Select `apps/chrome-extension/dist`
 
-4. Open extension options and verify bridge connectivity:
+4. Verify behavior:
 
-- Click **Details** -> **Extension options**
-- Use **Check Desktop Bridge**
+- Start a browser download.
+- The desktop app should open/focus.
+- The URL dialog should be prefilled.
+- Click **Download** in desktop app to confirm.
 
 ## Monorepo scripts
 
