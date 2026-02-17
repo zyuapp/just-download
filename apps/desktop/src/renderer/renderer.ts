@@ -2,9 +2,17 @@ type Theme = 'dark' | 'light';
 
 interface RendererState {
   downloads: DownloadRecord[];
+  downloadSpeeds: Map<string, DownloadSpeedState>;
   contextTargetId: string | null;
   unsubscribeDownloads: (() => void) | null;
   theme: Theme | null;
+}
+
+interface DownloadSpeedState {
+  lastBytes: number;
+  lastTimestamp: number;
+  bytesPerSecond: number;
+  lastStatus: DownloadRecord['status'];
 }
 
 interface ElementsState {
@@ -22,6 +30,7 @@ interface ElementsState {
 
 const state: RendererState = {
   downloads: [],
+  downloadSpeeds: new Map(),
   contextTargetId: null,
   unsubscribeDownloads: null,
   theme: null
@@ -44,6 +53,7 @@ const THEME_DARK: Theme = 'dark';
 const THEME_LIGHT: Theme = 'light';
 const THEME_STORAGE_KEY = 'just-download:theme';
 const DEFAULT_THEME: Theme = THEME_DARK;
+const SPEED_SMOOTHING_FACTOR = 0.35;
 
 const DOWNLOAD_ITEM_BASE_CLASS = 'download-item rounded-[12px] border border-[var(--border)] bg-[var(--surface-strong)] p-[13px] shadow-[var(--shadow-card)] transition-[transform,border-color,background-color] duration-150 ease-out hover:-translate-y-px hover:border-[var(--border-strong)] hover:bg-[var(--surface-hover)]';
 const DOWNLOAD_INFO_CLASS = 'mb-[7px] flex items-start justify-between gap-[10px] max-[760px]:flex-col max-[760px]:items-start';
@@ -113,6 +123,100 @@ function formatBytes(bytes: number): string {
 
   const rounded = unitIndex === 0 ? Math.round(size) : size.toFixed(2);
   return `${rounded} ${units[unitIndex]}`;
+}
+
+function formatSpeed(bytesPerSecond: number): string {
+  return `${formatBytes(bytesPerSecond)}/s`;
+}
+
+function getNowTimestamp(): number {
+  if (typeof performance !== 'undefined' && typeof performance.now === 'function') {
+    return performance.now();
+  }
+
+  return Date.now();
+}
+
+function getSafeDownloadedBytes(value: number): number {
+  if (!Number.isFinite(value) || value <= 0) {
+    return 0;
+  }
+
+  return value;
+}
+
+function updateDownloadSpeeds(downloads: DownloadRecord[]): void {
+  const timestamp = getNowTimestamp();
+  const nextSpeeds = new Map<string, DownloadSpeedState>();
+
+  for (const download of downloads) {
+    const downloadedBytes = getSafeDownloadedBytes(download.downloadedBytes);
+    const previous = state.downloadSpeeds.get(download.id);
+
+    if (!previous) {
+      nextSpeeds.set(download.id, {
+        lastBytes: downloadedBytes,
+        lastTimestamp: timestamp,
+        bytesPerSecond: 0,
+        lastStatus: download.status
+      });
+      continue;
+    }
+
+    if (download.status !== 'downloading') {
+      nextSpeeds.set(download.id, {
+        lastBytes: downloadedBytes,
+        lastTimestamp: timestamp,
+        bytesPerSecond: 0,
+        lastStatus: download.status
+      });
+      continue;
+    }
+
+    if (previous.lastStatus !== 'downloading') {
+      nextSpeeds.set(download.id, {
+        lastBytes: downloadedBytes,
+        lastTimestamp: timestamp,
+        bytesPerSecond: 0,
+        lastStatus: download.status
+      });
+      continue;
+    }
+
+    const elapsedMs = timestamp - previous.lastTimestamp;
+    const deltaBytes = downloadedBytes - previous.lastBytes;
+
+    let measuredBytesPerSecond = 0;
+    if (elapsedMs > 0 && deltaBytes > 0) {
+      measuredBytesPerSecond = (deltaBytes * 1000) / elapsedMs;
+    }
+
+    const normalizedSpeed = Number.isFinite(measuredBytesPerSecond) && measuredBytesPerSecond > 0
+      ? measuredBytesPerSecond
+      : 0;
+
+    const smoothedSpeed = previous.bytesPerSecond > 0 && normalizedSpeed > 0
+      ? (previous.bytesPerSecond * (1 - SPEED_SMOOTHING_FACTOR)) + (normalizedSpeed * SPEED_SMOOTHING_FACTOR)
+      : normalizedSpeed;
+
+    nextSpeeds.set(download.id, {
+      lastBytes: downloadedBytes,
+      lastTimestamp: timestamp,
+      bytesPerSecond: smoothedSpeed,
+      lastStatus: download.status
+    });
+  }
+
+  state.downloadSpeeds = nextSpeeds;
+}
+
+function getDownloadSpeed(download: DownloadRecord): number {
+  if (download.status !== 'downloading') {
+    return 0;
+  }
+
+  const speedState = state.downloadSpeeds.get(download.id);
+  return speedState && speedState.bytesPerSecond > 0 ? speedState.bytesPerSecond : 0;
 }
 
 function escapeHtml(text: string): string {
@@ -189,6 +293,10 @@ function createDownloadItem(download: DownloadRecord): HTMLElement {
 
   const progress = getProgress(download);
   const totalLabel = download.totalBytes > 0 ? formatBytes(download.totalBytes) : 'Unknown';
+  const progressLabel = `${formatBytes(download.downloadedBytes)} / ${totalLabel}`;
+  const speedLabel = download.status === 'downloading'
+    ? ` | ${formatSpeed(getDownloadSpeed(download))}`
+    : '';
   const errorText = download.status === 'error' && download.error
     ? `
       <div class="download-error" role="alert" aria-live="polite">
@@ -207,7 +315,7 @@ function createDownloadItem(download: DownloadRecord): HTMLElement {
       <div class="${PROGRESS_TRACK_CLASS}">
         <div class="progress-fill" data-status="${statusValue}" style="width: ${progress}%"></div>
       </div>
-      <div class="${PROGRESS_TEXT_CLASS}">${formatBytes(download.downloadedBytes)} / ${totalLabel}</div>
+      <div class="${PROGRESS_TEXT_CLASS}">${progressLabel}${speedLabel}</div>
     </div>
     ${errorText}
     ${getActionsMarkup(download)}
@@ -375,6 +483,7 @@ async function handleContextMenuAction(action: string): Promise<void> {
 async function refreshDownloads(): Promise<void> {
   const current = await getAPI().getDownloads();
   state.downloads = Array.isArray(current) ? current : [];
+  updateDownloadSpeeds(state.downloads);
   renderDownloads();
 }
 
@@ -490,6 +599,7 @@ async function initialize(): Promise<void> {
 
   state.unsubscribeDownloads = getAPI().onDownloadsChanged((nextDownloads) => {
     state.downloads = Array.isArray(nextDownloads) ? nextDownloads : [];
+    updateDownloadSpeeds(state.downloads);
     renderDownloads();
   });
 
