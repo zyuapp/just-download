@@ -1764,6 +1764,10 @@ function stopBridgeServer() {
 }
 
 function createWindow() {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    return;
+  }
+
   const appIcon = createAppIcon(256);
 
   isRendererReady = false;
@@ -1916,8 +1920,6 @@ app.whenReady().then(async () => {
 
   registerProtocolClient();
 
-  processPendingProtocolUrls();
-
   await initializeStore();
   registerIpcHandlers();
   startBridgeServer();
@@ -1931,6 +1933,13 @@ app.whenReady().then(async () => {
 
   createWindow();
   createTray();
+
+  const startupProtocolUrl = extractProtocolUrlFromArgv(process.argv);
+  if (startupProtocolUrl) {
+    queueProtocolUrl(startupProtocolUrl);
+  }
+
+  processPendingProtocolUrls();
 
   notifyDownloadsChanged();
 });
