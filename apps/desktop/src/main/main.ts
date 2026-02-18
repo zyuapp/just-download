@@ -88,6 +88,14 @@ const STATUS = {
   ERROR: 'error'
 };
 
+const gotTheLock = app.requestSingleInstanceLock();
+
+if (!gotTheLock) {
+  console.log('[app] Another instance is already running. Quitting.');
+  app.quit();
+  process.exit(0);
+}
+
 let mainWindow = null;
 let tray = null;
 let isQuitting = false;
@@ -98,6 +106,13 @@ let store = null;
 let downloads = [];
 
 let downloadsDir = '';
+
+app.on('will-finish-launching', () => {
+  app.on('open-url', (event, urlValue) => {
+    event.preventDefault();
+    queueProtocolUrl(urlValue);
+  });
+});
 let partialsDir = '';
 
 const activeDownloads = new Map();
@@ -1892,11 +1907,6 @@ function registerIpcHandlers() {
   });
 }
 
-app.on('open-url', (event, urlValue) => {
-  event.preventDefault();
-  queueProtocolUrl(urlValue);
-});
-
 app.whenReady().then(async () => {
   downloadsDir = app.getPath('downloads');
   partialsDir = path.join(app.getPath('userData'), 'partials');
@@ -1905,6 +1915,8 @@ app.whenReady().then(async () => {
   ensureDirectory(partialsDir);
 
   registerProtocolClient();
+
+  processPendingProtocolUrls();
 
   await initializeStore();
   registerIpcHandlers();
@@ -1919,13 +1931,6 @@ app.whenReady().then(async () => {
 
   createWindow();
   createTray();
-
-  const startupProtocolUrl = extractProtocolUrlFromArgv(process.argv);
-  if (startupProtocolUrl) {
-    queueProtocolUrl(startupProtocolUrl);
-  }
-
-  processPendingProtocolUrls();
 
   notifyDownloadsChanged();
 });
@@ -1960,4 +1965,13 @@ app.on('window-all-closed', () => {
 
 app.on('activate', () => {
   showMainWindow();
+});
+
+app.on('second-instance', (_event, commandLine) => {
+  showMainWindow();
+
+  const protocolUrl = extractProtocolUrlFromArgv(commandLine);
+  if (protocolUrl) {
+    queueProtocolUrl(protocolUrl);
+  }
 });

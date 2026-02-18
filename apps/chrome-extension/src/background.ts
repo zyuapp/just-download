@@ -38,7 +38,7 @@ const DEFAULT_SETTINGS = Object.freeze<BridgeSettings>({
 });
 
 const DESKTOP_LAUNCH_URL = 'justdownload://open?source=chrome-extension';
-const DESKTOP_STARTUP_TIMEOUT_MS = 12000;
+const DESKTOP_STARTUP_TIMEOUT_MS = 45000;
 const DESKTOP_HEALTH_POLL_INTERVAL_MS = 300;
 const DESKTOP_HEALTH_TIMEOUT_MS = 1500;
 const DESKTOP_LAUNCH_TAB_GC_DELAY_MS = 25000;
