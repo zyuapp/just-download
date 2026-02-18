@@ -219,7 +219,15 @@ function showMainWindow() {
     mainWindow.show();
   }
 
+  if (mainWindow.isMinimized()) {
+    mainWindow.restore();
+  }
+
   mainWindow.focus();
+
+  if (process.platform === 'darwin') {
+    app.focus({ steal: true });
+  }
 }
 
 function flushPendingDraftRequests() {
