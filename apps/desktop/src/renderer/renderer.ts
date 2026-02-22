@@ -3,6 +3,7 @@ type Theme = 'dark' | 'light';
 interface RendererState {
   downloads: DownloadRecord[];
   downloadSpeeds: Map<string, DownloadSpeedState>;
+  downloadItems: Map<string, HTMLElement>;
   contextTargetId: string | null;
   unsubscribeDownloads: (() => void) | null;
   unsubscribeDrafts: (() => void) | null;
@@ -32,6 +33,7 @@ interface ElementsState {
 const state: RendererState = {
   downloads: [],
   downloadSpeeds: new Map(),
+  downloadItems: new Map(),
   contextTargetId: null,
   unsubscribeDownloads: null,
   unsubscribeDrafts: null,
@@ -62,12 +64,49 @@ const DOWNLOAD_INFO_CLASS = 'mb-[7px] flex items-start justify-between gap-[10px
 const FILENAME_CLASS = 'flex-1 break-words text-[14px] font-[620] text-[var(--text-title)]';
 const PROGRESS_TRACK_CLASS = 'h-[9px] overflow-hidden rounded-full border border-[color-mix(in_srgb,var(--border)_76%,transparent)] bg-[var(--progress-track)]';
 const PROGRESS_TEXT_CLASS = 'mt-[6px] text-[11px] uppercase tracking-[0.04em] text-[var(--text-faint)]';
+const ACTION_KEY_SEPARATOR = ':';
+
+type DownloadAction = 'pause' | 'resume' | 'cancel';
+
+const pendingActions = new Set<string>();
 
 function getAPI(): ElectronAPI {
   if (!window.electronAPI) {
     throw new Error('Failed to initialize app bridge.');
   }
   return window.electronAPI;
+}
+
+function isDownloadAction(action: string | undefined): action is DownloadAction {
+  return action === 'pause' || action === 'resume' || action === 'cancel';
+}
+
+function getActionKey(downloadId: string, action: DownloadAction): string {
+  return `${downloadId}${ACTION_KEY_SEPARATOR}${action}`;
+}
+
+async function runDownloadAction(downloadId: string, action: DownloadAction): Promise<void> {
+  const actionKey = getActionKey(downloadId, action);
+  if (pendingActions.has(actionKey)) {
+    return;
+  }
+
+  pendingActions.add(actionKey);
+
+  try {
+    if (action === 'pause') {
+      await getAPI().pauseDownload(downloadId);
+    } else if (action === 'resume') {
+      await getAPI().resumeDownload(downloadId);
+    } else {
+      await getAPI().cancelDownload(downloadId);
+    }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Action failed.';
+    window.alert(message);
+  } finally {
+    pendingActions.delete(actionKey);
+  }
 }
 
 function getNextTheme(theme: Theme): Theme {
@@ -286,13 +325,40 @@ function getActionsMarkup(download: DownloadRecord): string {
   `;
 }
 
-function createDownloadItem(download: DownloadRecord): HTMLElement {
-  const item = document.createElement('article');
-  const statusValue = download.status || 'unknown';
-  item.className = DOWNLOAD_ITEM_BASE_CLASS;
-  item.dataset.id = download.id;
-  item.dataset.status = statusValue;
+function getDownloadRecord(downloadId: string): DownloadRecord | undefined {
+  return state.downloads.find((entry) => entry.id === downloadId);
+}
 
+function bindActionButtons(item: HTMLElement, downloadId: string): void {
+  const actionButtons = item.querySelectorAll<HTMLButtonElement>('.action-btn');
+  actionButtons.forEach((button) => {
+    const triggerAction = (action: string | undefined): void => {
+      if (!isDownloadAction(action)) {
+        return;
+      }
+
+      void runDownloadAction(downloadId, action);
+    };
+
+    button.addEventListener('pointerdown', (event: PointerEvent) => {
+      if (event.button !== 0) {
+        return;
+      }
+
+      event.preventDefault();
+      event.stopPropagation();
+      triggerAction(button.dataset.action);
+    });
+
+    button.addEventListener('click', (event: MouseEvent) => {
+      event.stopPropagation();
+      triggerAction(button.dataset.action);
+    });
+  });
+}
+
+function updateDownloadItem(item: HTMLElement, download: DownloadRecord): void {
+  const statusValue = download.status || 'unknown';
   const progress = getProgress(download);
   const totalLabel = download.totalBytes > 0 ? formatBytes(download.totalBytes) : 'Unknown';
   const progressLabel = `${formatBytes(download.downloadedBytes)} / ${totalLabel}`;
@@ -307,6 +373,13 @@ function createDownloadItem(download: DownloadRecord): HTMLElement {
       </div>
     `
     : '';
+
+  item.dataset.status = statusValue;
+  if (download.status === 'completed') {
+    item.classList.add('cursor-pointer');
+  } else {
+    item.classList.remove('cursor-pointer');
+  }
 
   item.innerHTML = `
     <div class="${DOWNLOAD_INFO_CLASS}">
@@ -323,44 +396,49 @@ function createDownloadItem(download: DownloadRecord): HTMLElement {
     ${getActionsMarkup(download)}
   `;
 
-  if (download.status === 'completed') {
-    item.classList.add('cursor-pointer');
+  bindActionButtons(item, download.id);
+}
 
-    item.addEventListener('dblclick', async () => {
-      try {
-        await getAPI().openFile(download.id);
-      } catch (error) {
-        const message = error instanceof Error ? error.message : 'Unable to open file.';
-        window.alert(message);
-      }
-    });
+function createDownloadItem(download: DownloadRecord): HTMLElement {
+  const item = document.createElement('article');
+  item.className = DOWNLOAD_ITEM_BASE_CLASS;
+  item.dataset.id = download.id;
 
-    item.addEventListener('contextmenu', (event: MouseEvent) => {
-      event.preventDefault();
-      showContextMenu(download.id, event.clientX, event.clientY);
-    });
-  }
+  item.addEventListener('dblclick', async () => {
+    const downloadId = item.dataset.id;
+    if (!downloadId) {
+      return;
+    }
 
-  const actionButtons = item.querySelectorAll<HTMLButtonElement>('.action-btn');
-  actionButtons.forEach((button) => {
-    button.addEventListener('click', async (event: MouseEvent) => {
-      event.stopPropagation();
+    const current = getDownloadRecord(downloadId);
+    if (!current || current.status !== 'completed') {
+      return;
+    }
 
-      const action = button.dataset.action;
-      try {
-        if (action === 'pause') {
-          await getAPI().pauseDownload(download.id);
-        } else if (action === 'resume') {
-          await getAPI().resumeDownload(download.id);
-        } else if (action === 'cancel') {
-          await getAPI().cancelDownload(download.id);
-        }
-      } catch (error) {
-        const message = error instanceof Error ? error.message : 'Action failed.';
-        window.alert(message);
-      }
-    });
+    try {
+      await getAPI().openFile(downloadId);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unable to open file.';
+      window.alert(message);
+    }
   });
+
+  item.addEventListener('contextmenu', (event: MouseEvent) => {
+    const downloadId = item.dataset.id;
+    if (!downloadId) {
+      return;
+    }
+
+    const current = getDownloadRecord(downloadId);
+    if (!current || current.status !== 'completed') {
+      return;
+    }
+
+    event.preventDefault();
+    showContextMenu(downloadId, event.clientX, event.clientY);
+  });
+
+  updateDownloadItem(item, download);
 
   return item;
 }
@@ -373,9 +451,15 @@ function renderDownloads(): void {
     return;
   }
 
-  list.querySelectorAll('.download-item').forEach((node) => node.remove());
-
   const sorted = [...state.downloads].sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+  const sortedIds = new Set(sorted.map((download) => download.id));
+
+  for (const [downloadId, item] of state.downloadItems) {
+    if (!sortedIds.has(downloadId)) {
+      item.remove();
+      state.downloadItems.delete(downloadId);
+    }
+  }
 
   if (sorted.length === 0) {
     empty.classList.remove('hidden');
@@ -383,9 +467,22 @@ function renderDownloads(): void {
   }
 
   empty.classList.add('hidden');
+  const fragment = document.createDocumentFragment();
+
   for (const download of sorted) {
-    list.appendChild(createDownloadItem(download));
+    const existingItem = state.downloadItems.get(download.id);
+    const item = existingItem || createDownloadItem(download);
+
+    if (!existingItem) {
+      state.downloadItems.set(download.id, item);
+    } else {
+      updateDownloadItem(item, download);
+    }
+
+    fragment.appendChild(item);
   }
+
+  list.appendChild(fragment);
 }
 
 function showUrlDialog(prefilledUrl = ''): void {
