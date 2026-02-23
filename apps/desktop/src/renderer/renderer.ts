@@ -1,3 +1,5 @@
+import { reconcileDownloadItems } from './download-list-reconciler.js';
+
 type Theme = 'dark' | 'light';
 
 interface RendererState {
@@ -357,7 +359,39 @@ function bindActionButtons(item: HTMLElement, downloadId: string): void {
   });
 }
 
+function updateDownloadingItemContent(
+  item: HTMLElement,
+  download: DownloadRecord,
+  progress: number,
+  progressLabel: string,
+  speedLabel: string,
+  statusValue: string
+): boolean {
+  const filenameElement = item.querySelector<HTMLElement>('[data-role="filename"]');
+  const statusChipElement = item.querySelector<HTMLElement>('[data-role="status-chip"]');
+  const progressFillElement = item.querySelector<HTMLElement>('[data-role="progress-fill"]');
+  const progressTextElement = item.querySelector<HTMLElement>('[data-role="progress-text"]');
+
+  if (!filenameElement || !statusChipElement || !progressFillElement || !progressTextElement) {
+    return false;
+  }
+
+  filenameElement.textContent = download.filename;
+  filenameElement.setAttribute('title', download.filename);
+
+  statusChipElement.dataset.status = statusValue;
+  statusChipElement.textContent = statusLabel(download);
+
+  progressFillElement.dataset.status = statusValue;
+  progressFillElement.style.width = `${progress}%`;
+
+  progressTextElement.textContent = `${progressLabel}${speedLabel}`;
+
+  return true;
+}
+
 function updateDownloadItem(item: HTMLElement, download: DownloadRecord): void {
+  const previousStatus = item.dataset.status || null;
   const statusValue = download.status || 'unknown';
   const progress = getProgress(download);
   const totalLabel = download.totalBytes > 0 ? formatBytes(download.totalBytes) : 'Unknown';
@@ -381,16 +415,23 @@ function updateDownloadItem(item: HTMLElement, download: DownloadRecord): void {
     item.classList.remove('cursor-pointer');
   }
 
+  if (previousStatus === 'downloading' && statusValue === 'downloading') {
+    item.dataset.status = statusValue;
+    if (updateDownloadingItemContent(item, download, progress, progressLabel, speedLabel, statusValue)) {
+      return;
+    }
+  }
+
   item.innerHTML = `
     <div class="${DOWNLOAD_INFO_CLASS}">
-      <span class="${FILENAME_CLASS}" title="${escapeHtml(download.filename)}">${escapeHtml(download.filename)}</span>
-      <span class="status-chip" data-status="${statusValue}">${statusLabel(download)}</span>
+      <span data-role="filename" class="${FILENAME_CLASS}" title="${escapeHtml(download.filename)}">${escapeHtml(download.filename)}</span>
+      <span data-role="status-chip" class="status-chip" data-status="${statusValue}">${statusLabel(download)}</span>
     </div>
     <div class="mt-[8px]">
       <div class="${PROGRESS_TRACK_CLASS}">
-        <div class="progress-fill" data-status="${statusValue}" style="width: ${progress}%"></div>
+        <div data-role="progress-fill" class="progress-fill" data-status="${statusValue}" style="width: ${progress}%"></div>
       </div>
-      <div class="${PROGRESS_TEXT_CLASS}">${progressLabel}${speedLabel}</div>
+      <div data-role="progress-text" class="${PROGRESS_TEXT_CLASS}">${progressLabel}${speedLabel}</div>
     </div>
     ${errorText}
     ${getActionsMarkup(download)}
@@ -467,22 +508,19 @@ function renderDownloads(): void {
   }
 
   empty.classList.add('hidden');
-  const fragment = document.createDocumentFragment();
 
-  for (const download of sorted) {
-    const existingItem = state.downloadItems.get(download.id);
-    const item = existingItem || createDownloadItem(download);
-
-    if (!existingItem) {
-      state.downloadItems.set(download.id, item);
-    } else {
-      updateDownloadItem(item, download);
-    }
-
-    fragment.appendChild(item);
-  }
-
-  list.appendChild(fragment);
+  reconcileDownloadItems({
+    sortedDownloads: sorted,
+    itemsById: state.downloadItems,
+    list: {
+      getChildAt: (index) => list.children.item(index) as HTMLElement | null,
+      insertBefore: (item, referenceItem) => {
+        list.insertBefore(item, referenceItem);
+      }
+    },
+    createItem: createDownloadItem,
+    updateItem: updateDownloadItem
+  });
 }
 
 function showUrlDialog(prefilledUrl = ''): void {

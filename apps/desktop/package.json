@@ -6,7 +6,7 @@
     "clean": "node -e \"require('fs').rmSync('dist', { recursive: true, force: true })\"",
     "copy:assets": "node -e \"const fs=require('fs');fs.mkdirSync('dist/renderer',{recursive:true});fs.copyFileSync('src/renderer/index.html','dist/renderer/index.html');\"",
     "build:css": "tailwindcss -i src/renderer/styles.css -o dist/renderer/styles.css",
-    "build": "npm run clean && tsc -p tsconfig.json && npm run copy:assets && npm run build:css",
+    "build": "npm run clean && tsc -p tsconfig.main.json && tsc -p tsconfig.renderer.json && npm run copy:assets && npm run build:css",
     "lint": "eslint src --max-warnings 0",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
