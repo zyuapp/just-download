@@ -1,5 +1,4 @@
 const { randomUUID } = require('crypto');
-const { once } = require('events');
 const fs = require('fs');
 const fsp = require('fs/promises');
 const http = require('http');
@@ -31,6 +30,13 @@ const {
 const {
   formatDownloadError
 } = require('./download/errors');
+const {
+  waitForWritableDrain,
+  finalizeWritableStream
+} = require('./download/stream-lifecycle');
+const {
+  runDownloadWithDependencies
+} = require('./download/coordinator');
 const {
   createBridgeRequestHandler
 } = require('./bridge/server');
@@ -910,7 +916,11 @@ async function downloadPart(download, part, runtime) {
       }
 
       if (!writeStream.write(chunk)) {
-        await once(writeStream, 'drain');
+        await waitForWritableDrain(writeStream, () => Boolean(runtime.reason));
+      }
+
+      if (runtime.reason || writeStream.destroyed) {
+        break;
       }
 
       part.downloaded += chunk.length;
@@ -927,59 +937,23 @@ async function downloadPart(download, part, runtime) {
     }
   } finally {
     writeStream.off('error', onStreamError);
-    await new Promise((resolve) => {
-      writeStream.end(resolve);
-    });
+    await finalizeWritableStream(writeStream);
     runtime.streams.delete(writeStream);
     runtime.controllers.delete(controller);
   }
 }
 
 async function runDownload(downloadId) {
-  const download = getDownloadById(downloadId);
-  if (!download || download.status !== STATUS.DOWNLOADING || activeDownloads.has(downloadId)) {
-    return;
-  }
-
-  const runtime = {
-    reason: null,
-    controllers: new Set(),
-    streams: new Set()
-  };
-
-  activeDownloads.set(downloadId, runtime);
-
-  try {
-    await Promise.all(download.parts.map((part) => downloadPart(download, part, runtime)));
-
-    if (runtime.reason) {
-      return;
-    }
-
-    await assembleDownloadedFile(download);
-
-    download.downloadedBytes = sumDownloadedBytes(download.parts);
-    if (!download.totalBytes) {
-      download.totalBytes = download.downloadedBytes;
-    }
-
-    download.status = STATUS.COMPLETED;
-    download.error = null;
-    download.completedAt = Date.now();
-
-    flushProgressSync(download.id);
-  } catch (error) {
-    if (runtime.reason === 'paused' || runtime.reason === 'cancelled') {
-      return;
-    }
-
-    download.status = STATUS.ERROR;
-    download.error = formatDownloadError(error);
-
-    flushProgressSync(download.id);
-  } finally {
-    activeDownloads.delete(downloadId);
-  }
+  await runDownloadWithDependencies(downloadId, {
+    getDownloadById,
+    activeDownloads,
+    status: STATUS,
+    downloadPart,
+    assembleDownloadedFile,
+    sumDownloadedBytes,
+    flushProgressSync,
+    formatDownloadError
+  });
 }
 
 async function startDownload(rawUrl, options: any = {}) {
@@ -1037,7 +1011,16 @@ async function pauseDownload(downloadId) {
 
 async function resumeDownload(downloadId) {
   const download = getDownloadById(downloadId);
-  if (!download || (download.status !== STATUS.PAUSED && download.status !== STATUS.ERROR)) {
+  if (!download) {
+    return;
+  }
+
+  if (download.status === STATUS.DOWNLOADING) {
+    runDownload(download.id);
+    return;
+  }
+
+  if (download.status !== STATUS.PAUSED && download.status !== STATUS.ERROR) {
     return;
   }
 
