@@ -14,7 +14,11 @@
     "build:desktop": "npm run -w @just-download/desktop build",
     "build:extension": "npm run -w @just-download/chrome-extension build",
     "build": "lage build --allow-no-target-runs",
+    "typecheck": "npm run -w @just-download/desktop typecheck && npm run -w @just-download/chrome-extension typecheck",
     "test": "lage test --allow-no-target-runs",
+    "test:all": "npm run -w @just-download/desktop test && npm run -w @just-download/chrome-extension test",
+    "precommit:verify": "npm run typecheck && npm run test:all",
+    "prepare": "node scripts/install-git-hooks.cjs",
     "lint": "lage lint --allow-no-target-runs"
   },
   "devDependencies": {

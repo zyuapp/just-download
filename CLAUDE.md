@@ -60,8 +60,8 @@ Follow this file before making changes.
 - `npm run -w <workspace> test -- <path-or-pattern>`
 
 ### Package / Release
-- Package desktop macOS DMG: `npm run package:mac`
-- Workspace direct packaging: `npm run -w @just-download/desktop package:mac`
+- Package desktop macOS DMG and open release folder: `npm run package:mac`
+- Workspace direct packaging and open release folder: `npm run -w @just-download/desktop package:mac`
 - Generate desktop icons: `npm run -w @just-download/desktop icon:generate`
 
 ## Manual Verification

@@ -13,7 +13,7 @@
     "start": "npm run dev",
     "dev": "npm run build && electron .",
     "icon:generate": "swift scripts/generate-icons.swift && iconutil -c icns build/icon.iconset -o build/icon.icns",
-    "package:mac": "npm run build && npm run icon:generate && CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --mac dmg --publish never"
+    "package:mac": "npm run build && npm run icon:generate && CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --mac dmg --publish never && open release"
   },
   "keywords": [],
   "author": "",
