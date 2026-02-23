@@ -1,25 +1,17 @@
-const SETTINGS_KEY = 'bridgeSettings';
-const STATS_KEY = 'bridgeStats';
-
-type BridgeSettings = {
-  enabled: boolean;
-  bridgeBaseUrl: string;
-  requestTimeoutMs: number;
-};
-
-type BridgeStats = {
-  interceptedCount: number;
-  fallbackCount: number;
-  lastError: string | null;
-  lastInterceptedAt: number | null;
-  lastFallbackAt: number | null;
-};
-
-type HandoffAuth = {
-  type: 'basic';
-  username: string;
-  password: string;
-};
+import {
+  DEFAULT_SETTINGS,
+  DEFAULT_STATS,
+  SETTINGS_KEY,
+  STATS_KEY,
+  extractFilenameHint,
+  normalizeSettings,
+  normalizeStats,
+  sanitizeErrorMessage,
+  splitAuthFromUrl,
+  type BridgeSettings,
+  type BridgeStats,
+  type HandoffAuth
+} from './shared/bridge-domain';
 
 type HandoffPayload = {
   url: string;
@@ -31,12 +23,6 @@ type HandoffPayload = {
   auth: HandoffAuth | null;
 };
 
-const DEFAULT_SETTINGS = Object.freeze<BridgeSettings>({
-  enabled: true,
-  bridgeBaseUrl: 'http://127.0.0.1:17839',
-  requestTimeoutMs: 4000
-});
-
 const DESKTOP_LAUNCH_URL = 'justdownload://open?source=chrome-extension';
 const DESKTOP_STARTUP_TIMEOUT_MS = 45000;
 const DESKTOP_HEALTH_POLL_INTERVAL_MS = 300;
@@ -44,44 +30,9 @@ const DESKTOP_HEALTH_TIMEOUT_MS = 1500;
 const DESKTOP_LAUNCH_TAB_GC_DELAY_MS = 25000;
 const DESKTOP_LAUNCH_COOLDOWN_MS = 2000;
 
-const DEFAULT_STATS = Object.freeze<BridgeStats>({
-  interceptedCount: 0,
-  fallbackCount: 0,
-  lastError: null,
-  lastInterceptedAt: null,
-  lastFallbackAt: null
-});
-
 let settingsCache: BridgeSettings = { ...DEFAULT_SETTINGS };
 const activeInterceptions = new Set<number>();
 let lastDesktopLaunchAt = 0;
-
-function normalizeSettings(value): BridgeSettings {
-  const next = value && typeof value === 'object' ? value : {};
-  const requestTimeoutMs = Number.isFinite(next.requestTimeoutMs)
-    ? Math.min(30000, Math.max(500, Math.floor(next.requestTimeoutMs)))
-    : DEFAULT_SETTINGS.requestTimeoutMs;
-
-  return {
-    enabled: next.enabled !== false,
-    bridgeBaseUrl: typeof next.bridgeBaseUrl === 'string' && next.bridgeBaseUrl.trim()
-      ? next.bridgeBaseUrl.trim().replace(/\/+$/, '')
-      : DEFAULT_SETTINGS.bridgeBaseUrl,
-    requestTimeoutMs
-  };
-}
-
-function normalizeStats(value): BridgeStats {
-  const next = value && typeof value === 'object' ? value : {};
-
-  return {
-    interceptedCount: Number.isFinite(next.interceptedCount) ? Math.max(0, Math.floor(next.interceptedCount)) : 0,
-    fallbackCount: Number.isFinite(next.fallbackCount) ? Math.max(0, Math.floor(next.fallbackCount)) : 0,
-    lastError: typeof next.lastError === 'string' && next.lastError ? next.lastError : null,
-    lastInterceptedAt: Number.isFinite(next.lastInterceptedAt) ? next.lastInterceptedAt : null,
-    lastFallbackAt: Number.isFinite(next.lastFallbackAt) ? next.lastFallbackAt : null
-  };
-}
 
 function storageGet(keys) {
   return new Promise<Record<string, any>>((resolve) => {
@@ -119,13 +70,6 @@ function sleep(ms: number) {
   });
 }
 
-function decodeURIComponentSafe(value: string) {
-  try {
-    return decodeURIComponent(value);
-  } catch {
-    return value;
-  }
-}
 
 function getDownloadUrl(downloadItem: chrome.downloads.DownloadItem | null | undefined) {
   if (!downloadItem || typeof downloadItem !== 'object') {
@@ -152,66 +96,6 @@ function isHttpDownloadUrl(url: string) {
   }
 }
 
-function splitAuthFromUrl(url: string): { url: string; auth: HandoffAuth | null } {
-  try {
-    const parsed = new URL(url);
-    const hasEmbeddedAuth = Boolean(parsed.username || parsed.password);
-
-    if (!hasEmbeddedAuth) {
-      return {
-        url: parsed.toString(),
-        auth: null
-      };
-    }
-
-    const auth: HandoffAuth = {
-      type: 'basic',
-      username: decodeURIComponentSafe(parsed.username || ''),
-      password: decodeURIComponentSafe(parsed.password || '')
-    };
-
-    parsed.username = '';
-    parsed.password = '';
-
-    return {
-      url: parsed.toString(),
-      auth
-    };
-  } catch {
-    return {
-      url,
-      auth: null
-    };
-  }
-}
-
-function redactCredentialUrls(message: string) {
-  if (typeof message !== 'string' || !message) {
-    return '';
-  }
-
-  return message.replace(/(https?:\/\/)([^\s/:@]+)(?::[^\s@/]*)?@/gi, '$1[redacted]@');
-}
-
-function sanitizeErrorMessage(error: unknown) {
-  const message = error instanceof Error ? error.message : String(error || 'Desktop handoff failed.');
-  const sanitized = redactCredentialUrls(message).replace(/\s+/g, ' ').trim();
-
-  if (!sanitized) {
-    return 'Desktop handoff failed.';
-  }
-
-  return sanitized.length > 220 ? `${sanitized.slice(0, 217)}...` : sanitized;
-}
-
-function extractFilenameHint(pathLikeValue: string | null | undefined) {
-  if (typeof pathLikeValue !== 'string' || !pathLikeValue.trim()) {
-    return null;
-  }
-
-  const filename = pathLikeValue.replace(/\\/g, '/').split('/').pop();
-  return filename && filename.trim() ? filename.trim() : null;
-}
 
 function pauseDownload(downloadId: number) {
   return new Promise<void>((resolve, reject) => {

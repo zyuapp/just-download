@@ -1,35 +1,16 @@
-const SETTINGS_KEY = 'bridgeSettings';
-const STATS_KEY = 'bridgeStats';
-
-type BridgeSettings = {
-  enabled: boolean;
-  bridgeBaseUrl: string;
-  requestTimeoutMs: number;
-};
-
-type BridgeStats = {
-  interceptedCount: number;
-  fallbackCount: number;
-  lastError: string | null;
-  lastInterceptedAt: number | null;
-  lastFallbackAt: number | null;
-};
+import {
+  DEFAULT_SETTINGS,
+  DEFAULT_STATS,
+  SETTINGS_KEY,
+  STATS_KEY,
+  formatTimestamp,
+  normalizeSettings,
+  normalizeStats,
+  type BridgeSettings,
+  type BridgeStats
+} from './shared/bridge-domain';
 
 type StatusTone = 'neutral' | 'success' | 'error';
-
-const DEFAULT_SETTINGS = Object.freeze<BridgeSettings>({
-  enabled: true,
-  bridgeBaseUrl: 'http://127.0.0.1:17839',
-  requestTimeoutMs: 4000
-});
-
-const DEFAULT_STATS = Object.freeze<BridgeStats>({
-  interceptedCount: 0,
-  fallbackCount: 0,
-  lastError: null,
-  lastInterceptedAt: null,
-  lastFallbackAt: null
-});
 
 const elements: {
   enabled: HTMLInputElement | null;
@@ -77,40 +58,6 @@ function storageSet(values) {
       resolve();
     });
   });
-}
-
-function normalizeSettings(value): BridgeSettings {
-  const next = value && typeof value === 'object' ? value : {};
-
-  return {
-    enabled: next.enabled !== false,
-    bridgeBaseUrl: typeof next.bridgeBaseUrl === 'string' && next.bridgeBaseUrl.trim()
-      ? next.bridgeBaseUrl.trim().replace(/\/+$/, '')
-      : DEFAULT_SETTINGS.bridgeBaseUrl,
-    requestTimeoutMs: Number.isFinite(next.requestTimeoutMs)
-      ? Math.min(30000, Math.max(500, Math.floor(next.requestTimeoutMs)))
-      : DEFAULT_SETTINGS.requestTimeoutMs
-  };
-}
-
-function normalizeStats(value): BridgeStats {
-  const next = value && typeof value === 'object' ? value : {};
-
-  return {
-    interceptedCount: Number.isFinite(next.interceptedCount) ? Math.max(0, Math.floor(next.interceptedCount)) : 0,
-    fallbackCount: Number.isFinite(next.fallbackCount) ? Math.max(0, Math.floor(next.fallbackCount)) : 0,
-    lastError: typeof next.lastError === 'string' && next.lastError ? next.lastError : null,
-    lastInterceptedAt: Number.isFinite(next.lastInterceptedAt) ? next.lastInterceptedAt : null,
-    lastFallbackAt: Number.isFinite(next.lastFallbackAt) ? next.lastFallbackAt : null
-  };
-}
-
-function formatTimestamp(value: number | null) {
-  if (!Number.isFinite(value)) {
-    return 'Never';
-  }
-
-  return new Date(value).toLocaleString();
 }
 
 function setStatus(message: string, tone: StatusTone = 'neutral') {
