@@ -18,6 +18,7 @@
     "lint": "lage lint --allow-no-target-runs"
   },
   "devDependencies": {
-    "lage": "^2.14.18"
+    "lage": "^2.14.18",
+    "vitest": "^3.2.4"
   }
 }

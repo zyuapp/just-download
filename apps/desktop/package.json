@@ -8,6 +8,8 @@
     "build:css": "tailwindcss -i src/renderer/styles.css -o dist/renderer/styles.css",
     "build": "npm run clean && tsc -p tsconfig.json && npm run copy:assets && npm run build:css",
     "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "start": "npm run dev",
     "dev": "npm run build && electron .",
     "icon:generate": "swift scripts/generate-icons.swift && iconutil -c icns build/icon.iconset -o build/icon.icns",
