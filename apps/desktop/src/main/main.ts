@@ -32,10 +32,8 @@ const {
   formatDownloadError
 } = require('./download/errors');
 const {
-  BRIDGE_MODE_START,
-  BRIDGE_MODE_DRAFT,
-  parseBridgePayload
-} = require('./bridge/payload');
+  createBridgeRequestHandler
+} = require('./bridge/server');
 
 const PART_COUNT = 4;
 const PROGRESS_SYNC_INTERVAL_MS = 250;
@@ -137,7 +135,6 @@ let partialsDir = '';
 
 const activeDownloads = new Map();
 const progressTimers = new Map();
-const bridgeRequestCache = new Map();
 const pendingDraftRequests = [];
 const pendingProtocolUrls = [];
 
@@ -479,51 +476,6 @@ async function fetchWithAuthRetry(requestUrl, requestOptions, authState = null) 
   }
 
   return response;
-}
-
-function pruneBridgeRequestCache() {
-  const cutoff = Date.now() - BRIDGE_REQUEST_TTL_MS;
-
-  for (const [requestId, entry] of bridgeRequestCache.entries()) {
-    if (!entry || !Number.isFinite(entry.createdAt) || entry.createdAt < cutoff) {
-      bridgeRequestCache.delete(requestId);
-    }
-  }
-}
-
-function readBridgeRequestBody(request): Promise<string> {
-  return new Promise((resolve, reject) => {
-    let size = 0;
-    let overflow = false;
-    let body = '';
-
-    request.setEncoding('utf8');
-
-    request.on('data', (chunk) => {
-      if (overflow) {
-        return;
-      }
-
-      size += Buffer.byteLength(chunk, 'utf8');
-      if (size > BRIDGE_MAX_BODY_BYTES) {
-        overflow = true;
-        return;
-      }
-
-      body += chunk;
-    });
-
-    request.on('end', () => {
-      if (overflow) {
-        reject(new Error('Payload too large.'));
-        return;
-      }
-
-      resolve(body);
-    });
-
-    request.on('error', reject);
-  });
 }
 
 function svgToDataUrl(svgContent) {
@@ -1172,162 +1124,22 @@ async function openFolder(downloadId) {
   }
 }
 
-async function handleBridgeRequest(request, response) {
-  if (!request || !response) {
-    return;
-  }
-
-  if (request.method === 'OPTIONS') {
-    setBridgeResponseHeaders(response);
-    response.statusCode = 204;
-    response.end();
-    return;
-  }
-
-  let requestUrl;
-  try {
-    requestUrl = new URL(request.url || '/', `http://${BRIDGE_HOST}:${BRIDGE_PORT}`);
-  } catch {
-    sendBridgeJson(response, 400, {
-      accepted: false,
-      error: 'Invalid request URL.'
-    });
-    return;
-  }
-
-  if (request.method === 'GET' && requestUrl.pathname === BRIDGE_HEALTH_PATH) {
-    sendBridgeJson(response, 200, {
-      ok: true,
-      appVersion: app.getVersion(),
-      bridge: {
-        host: BRIDGE_HOST,
-        port: BRIDGE_PORT
-      }
-    });
-    return;
-  }
-
-  if (request.method !== 'POST' || requestUrl.pathname !== BRIDGE_DOWNLOADS_PATH) {
-    sendBridgeJson(response, 404, {
-      accepted: false,
-      error: 'Not found.'
-    });
-    return;
-  }
-
-  let rawBody = '';
-  try {
-    rawBody = await readBridgeRequestBody(request);
-  } catch (error) {
-    sendBridgeJson(response, 413, {
-      accepted: false,
-      error: error && error.message ? error.message : 'Payload too large.'
-    });
-    return;
-  }
-
-  let parsedPayload;
-  try {
-    parsedPayload = JSON.parse(rawBody || '{}');
-  } catch {
-    sendBridgeJson(response, 400, {
-      accepted: false,
-      error: 'Invalid JSON payload.'
-    });
-    return;
-  }
-
-  let payload;
-  try {
-    payload = parseBridgePayload(parsedPayload);
-  } catch (error) {
-    sendBridgeJson(response, 400, {
-      accepted: false,
-      error: error && error.message ? error.message : 'Invalid payload.'
-    });
-    return;
-  }
-
-  let normalizedRequest;
-  try {
-    normalizedRequest = normalizeDownloadRequest(payload.url, payload.auth || null);
-  } catch (error) {
-    sendBridgeJson(response, 400, {
-      accepted: false,
-      error: error && error.message ? error.message : 'Invalid URL.'
-    });
-    return;
-  }
-
-  pruneBridgeRequestCache();
-
-  if (payload.requestId && bridgeRequestCache.has(payload.requestId)) {
-    const cached = bridgeRequestCache.get(payload.requestId);
-
-    sendBridgeJson(response, 200, {
-      accepted: true,
-      duplicate: true,
-      mode: cached && cached.mode ? cached.mode : BRIDGE_MODE_START,
-      downloadId: cached ? cached.downloadId : null
-    });
-    return;
-  }
-
-  if (payload.mode === BRIDGE_MODE_DRAFT) {
-    queueDraftRequest(normalizedRequest.url, {
-      source: payload.source || 'bridge',
-      requestId: payload.requestId || null
-    });
-
-    if (payload.requestId) {
-      bridgeRequestCache.set(payload.requestId, {
-        mode: BRIDGE_MODE_DRAFT,
-        downloadId: null,
-        createdAt: Date.now()
-      });
-    }
-
-    sendBridgeJson(response, 202, {
-      accepted: true,
-      duplicate: false,
-      mode: BRIDGE_MODE_DRAFT,
-      queued: true,
-      downloadId: null
-    });
-    return;
-  }
-
-  try {
-    const record = await startDownload(normalizedRequest.url, {
-      auth: normalizedRequest.auth || null
-    });
-
-    if (payload.requestId) {
-      bridgeRequestCache.set(payload.requestId, {
-        mode: BRIDGE_MODE_START,
-        downloadId: record.id,
-        createdAt: Date.now()
-      });
-    }
-
-    sendBridgeJson(response, 202, {
-      accepted: true,
-      duplicate: false,
-      mode: BRIDGE_MODE_START,
-      downloadId: record.id
-    });
-  } catch (error) {
-    sendBridgeJson(response, 500, {
-      accepted: false,
-      error: error && error.message ? error.message : 'Failed to start download.'
-    });
-  }
-}
-
 function startBridgeServer() {
   if (bridgeServer) {
     return;
   }
+
+  const handleBridgeRequest = createBridgeRequestHandler({
+    host: BRIDGE_HOST,
+    port: BRIDGE_PORT,
+    downloadsPath: BRIDGE_DOWNLOADS_PATH,
+    healthPath: BRIDGE_HEALTH_PATH,
+    maxBodyBytes: BRIDGE_MAX_BODY_BYTES,
+    requestTtlMs: BRIDGE_REQUEST_TTL_MS,
+    getAppVersion: () => app.getVersion(),
+    queueDraftRequest,
+    startDownload
+  });
 
   const server = http.createServer((request, response) => {
     void handleBridgeRequest(request, response);
