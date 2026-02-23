@@ -13,16 +13,11 @@ const {
   shell
 } = require('electron');
 const {
-  parsePositiveInt,
   sanitizeFilename,
-  filenameFromUrl,
-  filenameFromContentDisposition
+  filenameFromUrl
 } = require('./download/url-utils');
 const {
-  parseDigestChallenge,
-  createDigestAuthorizationHeader,
-  createDownloadAuthState,
-  createPreemptiveDigestHeader
+  createDownloadAuthState
 } = require('./download/auth');
 const {
   normalizeDownloadRequest
@@ -31,12 +26,14 @@ const {
   formatDownloadError
 } = require('./download/errors');
 const {
-  waitForWritableDrain,
-  finalizeWritableStream
-} = require('./download/stream-lifecycle');
-const {
   runDownloadWithDependencies
 } = require('./download/coordinator');
+const {
+  fetchMetadata
+} = require('./download/http-client');
+const {
+  downloadPartWithHelpers
+} = require('./download/part-downloader');
 const {
   createBridgeRequestHandler
 } = require('./bridge/server');
@@ -144,6 +141,11 @@ const progressTimers = new Map();
 const pendingDraftRequests = [];
 const pendingProtocolUrls = [];
 
+type DraftRequestMetadata = {
+  source?: string | null;
+  requestId?: string | null;
+};
+
 function ensureDirectory(dirPath) {
   fs.mkdirSync(dirPath, { recursive: true });
 }
@@ -238,7 +240,7 @@ function flushPendingDraftRequests() {
   }
 }
 
-function queueDraftRequest(url, metadata: { source?: string | null; requestId?: string | null } = {}) {
+function queueDraftRequest(url, metadata: DraftRequestMetadata = {}) {
   const normalizedUrl = typeof url === 'string' ? url.trim() : '';
   if (!normalizedUrl) {
     return;
@@ -382,108 +384,6 @@ function clearProgressSync(downloadId) {
   }
 }
 
-function setBridgeResponseHeaders(response) {
-  response.setHeader('Content-Type', 'application/json; charset=utf-8');
-  response.setHeader('Access-Control-Allow-Origin', '*');
-  response.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-  response.setHeader('Access-Control-Allow-Headers', 'Content-Type, X-Just-Download-Source, X-Just-Download-Request-Id');
-  response.setHeader('Cache-Control', 'no-store');
-}
-
-function sendBridgeJson(response, statusCode, payload) {
-  setBridgeResponseHeaders(response);
-  response.statusCode = statusCode;
-  response.end(JSON.stringify(payload));
-}
-
-async function cancelResponseBody(response) {
-  if (!response || !response.body || typeof response.body.cancel !== 'function') {
-    return;
-  }
-
-  try {
-    await response.body.cancel();
-  } catch {
-    // ignore body cancel errors
-  }
-}
-
-async function fetchWithAuthRetry(requestUrl, requestOptions, authState = null) {
-  const method = typeof requestOptions?.method === 'string' && requestOptions.method
-    ? requestOptions.method.toUpperCase()
-    : 'GET';
-
-  const baseHeaders = {
-    ...(requestOptions?.headers || {})
-  };
-
-  const performFetch = async (url, authorizationHeader) => {
-    const headers = {
-      ...baseHeaders
-    };
-
-    if (authorizationHeader) {
-      headers.Authorization = authorizationHeader;
-    } else {
-      delete headers.Authorization;
-    }
-
-    return fetch(url, {
-      ...requestOptions,
-      method,
-      headers,
-      redirect: requestOptions?.redirect || 'follow'
-    });
-  };
-
-  const preemptiveDigestHeader = createPreemptiveDigestHeader(authState, method, requestUrl);
-  let response = await performFetch(requestUrl, preemptiveDigestHeader || (authState ? authState.authorizationHeader : null));
-
-  if (
-    response.status === 401
-    && authState
-    && !preemptiveDigestHeader
-    && authState.authorizationHeaderFallback
-    && authState.authorizationHeaderFallback !== authState.authorizationHeader
-  ) {
-    await cancelResponseBody(response);
-
-    response = await performFetch(requestUrl, authState.authorizationHeaderFallback);
-
-    if (response.status < 400) {
-      const previousPrimary = authState.authorizationHeader;
-      authState.authorizationHeader = authState.authorizationHeaderFallback;
-      authState.authorizationHeaderFallback = previousPrimary;
-      return response;
-    }
-  }
-
-  if (response.status === 401 && authState && authState.credentials) {
-    const challenge = parseDigestChallenge(response.headers.get('www-authenticate'));
-    if (challenge) {
-      const challengedUrl = response.url || requestUrl;
-      await cancelResponseBody(response);
-
-      const digestHeader = createDigestAuthorizationHeader({
-        challenge,
-        username: authState.credentials.username,
-        password: authState.credentials.password,
-        method,
-        url: challengedUrl
-      });
-
-      if (digestHeader) {
-        response = await performFetch(challengedUrl, digestHeader);
-        if (response.status < 400) {
-          authState.digestChallenge = challenge;
-        }
-      }
-    }
-  }
-
-  return response;
-}
-
 function svgToDataUrl(svgContent) {
   return `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svgContent)}`;
 }
@@ -614,129 +514,87 @@ function makeUniqueFilename(baseName) {
   return candidate;
 }
 
-async function fetchMetadata(rawUrl, authState = null) {
-  const metadata = {
-    finalUrl: rawUrl,
-    filename: null,
-    totalBytes: 0,
-    supportsRanges: false,
-    authorizationRejected: false
-  };
-
-  try {
-    const response = await fetchWithAuthRetry(rawUrl, {
-      method: 'HEAD',
-      redirect: 'follow'
-    }, authState);
-
-    if (response.status === 401) {
-      metadata.authorizationRejected = true;
-    }
-
-    metadata.finalUrl = response.url || rawUrl;
-    metadata.filename = filenameFromContentDisposition(response.headers.get('content-disposition'));
-    metadata.totalBytes = parsePositiveInt(response.headers.get('content-length'));
-    metadata.supportsRanges = (response.headers.get('accept-ranges') || '').toLowerCase().includes('bytes');
-  } catch {
-    // fall through to probe request below
-  }
-
-  if (metadata.totalBytes > 0 && metadata.supportsRanges && metadata.filename) {
-    return metadata;
-  }
-
-  try {
-    const response = await fetchWithAuthRetry(metadata.finalUrl || rawUrl, {
-      method: 'GET',
-      headers: { Range: 'bytes=0-0' },
-      redirect: 'follow'
-    }, authState);
-
-    if (response.status === 401) {
-      metadata.authorizationRejected = true;
-    }
-
-    metadata.finalUrl = response.url || metadata.finalUrl;
-
-    if (!metadata.filename) {
-      metadata.filename = filenameFromContentDisposition(response.headers.get('content-disposition'));
-    }
-
-    if (response.status === 206) {
-      metadata.supportsRanges = true;
-    }
-
-    const contentRange = response.headers.get('content-range');
-    if (contentRange) {
-      const match = contentRange.match(/\/(\d+)$/);
-      if (match && match[1]) {
-        metadata.totalBytes = parsePositiveInt(match[1]);
-      }
-    }
-
-    if (!metadata.totalBytes) {
-      metadata.totalBytes = parsePositiveInt(response.headers.get('content-length'));
-    }
-
-    await cancelResponseBody(response);
-  } catch {
-    // keep best-effort metadata values
-  }
-
-  return metadata;
-}
-
 function assertValidDownloadUrl(rawUrl) {
   return normalizeDownloadRequest(rawUrl).url;
 }
 
+function isPersistedDownloadCandidate(item) {
+  return Boolean(item && typeof item.id === 'string' && typeof item.url === 'string');
+}
+
+function normalizePersistedParts(item, downloadId) {
+  if (!Array.isArray(item.parts) || item.parts.length === 0) {
+    return [createSinglePart(downloadId, item.totalBytes || 0, item.downloadedBytes || 0)];
+  }
+
+  const normalizedParts = item.parts.map((part, index) => {
+    const normalized = serializePart({ ...part, index });
+    normalized.tempPath = normalized.tempPath || part.path || makePartPath(downloadId, index);
+    return normalized;
+  });
+
+  if (!(item.totalBytes > 0)) {
+    return normalizedParts;
+  }
+
+  return normalizedParts.map((part) => ({
+    ...part,
+    end: Number.isFinite(part.end) ? part.end : item.totalBytes - 1
+  }));
+}
+
+function normalizePersistedStatus(status) {
+  const allowedStatuses = [STATUS.DOWNLOADING, STATUS.PAUSED, STATUS.COMPLETED, STATUS.ERROR];
+  if (!allowedStatuses.includes(status)) {
+    return STATUS.ERROR;
+  }
+
+  if (status === STATUS.DOWNLOADING) {
+    return STATUS.PAUSED;
+  }
+
+  return status;
+}
+
+function normalizePersistedDownload(item) {
+  if (!isPersistedDownloadCandidate(item)) {
+    return null;
+  }
+
+  const id = item.id;
+  const filename = sanitizeFilename(item.filename || filenameFromUrl(item.url));
+  const parts = normalizePersistedParts(item, id);
+
+  return {
+    id,
+    url: item.url,
+    filename,
+    savePath: typeof item.savePath === 'string' && item.savePath
+      ? item.savePath
+      : path.join(downloadsDir, filename),
+    totalBytes: Number.isFinite(item.totalBytes) ? item.totalBytes : 0,
+    downloadedBytes: sumDownloadedBytes(parts),
+    status: normalizePersistedStatus(item.status),
+    error: item.error ? formatDownloadError({ message: item.error }) : null,
+    supportsRanges: Boolean(item.supportsRanges || (Array.isArray(item.parts) && item.parts.length > 1)),
+    parts,
+    createdAt: Number.isFinite(item.createdAt) ? item.createdAt : Date.now(),
+    completedAt: Number.isFinite(item.completedAt) ? item.completedAt : null
+  };
+}
+
 function normalizePersistedDownloads() {
-  downloads = (Array.isArray(downloads) ? downloads : [])
-    .filter((item) => item && typeof item.id === 'string' && typeof item.url === 'string')
-    .map((item) => {
-      const id = item.id;
-      const filename = sanitizeFilename(item.filename || filenameFromUrl(item.url));
+  const sourceDownloads = Array.isArray(downloads) ? downloads : [];
+  const nextDownloads = [];
 
-      let parts = Array.isArray(item.parts) && item.parts.length > 0
-        ? item.parts.map((part, index) => {
-          const normalized = serializePart({ ...part, index });
-          normalized.tempPath = normalized.tempPath || part.path || makePartPath(id, index);
-          return normalized;
-        })
-        : [createSinglePart(id, item.totalBytes || 0, item.downloadedBytes || 0)];
+  for (const item of sourceDownloads) {
+    const normalized = normalizePersistedDownload(item);
+    if (normalized) {
+      nextDownloads.push(normalized);
+    }
+  }
 
-      if (item.totalBytes > 0) {
-        parts = parts.map((part) => ({
-          ...part,
-          end: Number.isFinite(part.end) ? part.end : item.totalBytes - 1
-        }));
-      }
-
-      const normalized = {
-        id,
-        url: item.url,
-        filename,
-        savePath: typeof item.savePath === 'string' && item.savePath
-          ? item.savePath
-          : path.join(downloadsDir, filename),
-        totalBytes: Number.isFinite(item.totalBytes) ? item.totalBytes : 0,
-        downloadedBytes: sumDownloadedBytes(parts),
-        status: [STATUS.DOWNLOADING, STATUS.PAUSED, STATUS.COMPLETED, STATUS.ERROR].includes(item.status)
-          ? item.status
-          : STATUS.ERROR,
-        error: item.error ? formatDownloadError({ message: item.error }) : null,
-        supportsRanges: Boolean(item.supportsRanges || (Array.isArray(item.parts) && item.parts.length > 1)),
-        parts,
-        createdAt: Number.isFinite(item.createdAt) ? item.createdAt : Date.now(),
-        completedAt: Number.isFinite(item.completedAt) ? item.completedAt : null
-      };
-
-      if (normalized.status === STATUS.DOWNLOADING) {
-        normalized.status = STATUS.PAUSED;
-      }
-
-      return normalized;
-    });
+  downloads = nextDownloads;
 }
 
 function stopActiveDownload(downloadId, reason) {
@@ -807,140 +665,11 @@ async function assembleDownloadedFile(download) {
 }
 
 async function downloadPart(download, part, runtime) {
-  const canResumeWithRange = download.supportsRanges;
-
-  if (!canResumeWithRange && part.downloaded > 0) {
-    part.downloaded = 0;
-    await safeUnlink(part.tempPath);
-  }
-
-  const startOffset = part.start + part.downloaded;
-  const hasBoundedEnd = Number.isFinite(part.end);
-
-  if (hasBoundedEnd && startOffset > part.end) {
-    return;
-  }
-
-  const headers = {} as Record<string, string>;
-
-  if (canResumeWithRange) {
-    if (hasBoundedEnd) {
-      headers.Range = `bytes=${startOffset}-${part.end}`;
-    } else {
-      headers.Range = `bytes=${startOffset}-`;
-    }
-  }
-
-  const controller = new AbortController();
-  runtime.controllers.add(controller);
-
-  let response;
-
-  try {
-    response = await fetchWithAuthRetry(download.url, {
-      method: 'GET',
-      headers,
-      redirect: 'follow',
-      signal: controller.signal
-    }, download.authState || null);
-  } catch (error) {
-    runtime.controllers.delete(controller);
-
-    if (runtime.reason && error && error.name === 'AbortError') {
-      return;
-    }
-
-    throw error;
-  }
-
-  if (response.url && response.url !== download.url) {
-    download.url = response.url;
-  }
-
-  if (response.status >= 400) {
-    runtime.controllers.delete(controller);
-    throw new Error(`HTTP ${response.status}`);
-  }
-
-  if (canResumeWithRange && part.downloaded > 0 && response.status !== 206) {
-    runtime.controllers.delete(controller);
-    if (response.body && typeof response.body.cancel === 'function') {
-      await response.body.cancel();
-    }
-    throw new Error('Server does not support resuming this download.');
-  }
-
-  const contentRange = response.headers.get('content-range');
-  if (!download.totalBytes && contentRange) {
-    const match = contentRange.match(/\/(\d+)$/);
-    if (match && match[1]) {
-      download.totalBytes = parsePositiveInt(match[1]);
-    }
-  }
-
-  if (!download.totalBytes) {
-    const contentLength = parsePositiveInt(response.headers.get('content-length'));
-    if (contentLength > 0) {
-      download.totalBytes = response.status === 206 ? part.downloaded + contentLength : contentLength;
-      if (!hasBoundedEnd && Number.isFinite(download.totalBytes) && download.totalBytes > 0) {
-        part.end = download.totalBytes - 1;
-      }
-    }
-  }
-
-  if (!response.body) {
-    runtime.controllers.delete(controller);
-    throw new Error('Empty response body.');
-  }
-
-  const writeStream = fs.createWriteStream(part.tempPath, {
-    flags: part.downloaded > 0 ? 'a' : 'w'
+  await downloadPartWithHelpers(download, part, runtime, {
+    safeUnlink,
+    scheduleProgressSync,
+    sumDownloadedBytes
   });
-
-  let streamError = null;
-  const onStreamError = (error) => {
-    streamError = error;
-  };
-  writeStream.on('error', onStreamError);
-
-  runtime.streams.add(writeStream);
-
-  try {
-    for await (const chunk of response.body) {
-      if (runtime.reason) {
-        break;
-      }
-
-      if (streamError) {
-        throw streamError;
-      }
-
-      if (!writeStream.write(chunk)) {
-        await waitForWritableDrain(writeStream, () => Boolean(runtime.reason));
-      }
-
-      if (runtime.reason || writeStream.destroyed) {
-        break;
-      }
-
-      part.downloaded += chunk.length;
-      download.downloadedBytes = sumDownloadedBytes(download.parts);
-      scheduleProgressSync(download.id);
-    }
-
-    if (streamError) {
-      throw streamError;
-    }
-  } catch (error) {
-    if (!(runtime.reason && error && error.name === 'AbortError')) {
-      throw error;
-    }
-  } finally {
-    writeStream.off('error', onStreamError);
-    await finalizeWritableStream(writeStream);
-    runtime.streams.delete(writeStream);
-    runtime.controllers.delete(controller);
-  }
 }
 
 async function runDownload(downloadId) {
@@ -956,8 +685,11 @@ async function runDownload(downloadId) {
   });
 }
 
-async function startDownload(rawUrl, options: any = {}) {
-  const authPayload = options && typeof options === 'object' ? options.auth || null : null;
+async function startDownload(rawUrl, options: unknown = {}) {
+  const optionRecord = options && typeof options === 'object'
+    ? options as Record<string, unknown>
+    : null;
+  const authPayload = optionRecord ? optionRecord.auth || null : null;
   const normalizedRequest = normalizeDownloadRequest(rawUrl.trim(), authPayload);
   const normalizedUrl = normalizedRequest.url;
   const authState = createDownloadAuthState(normalizedRequest);

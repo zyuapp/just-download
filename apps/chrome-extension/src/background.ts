@@ -34,15 +34,17 @@ let settingsCache: BridgeSettings = { ...DEFAULT_SETTINGS };
 const activeInterceptions = new Set<number>();
 let lastDesktopLaunchAt = 0;
 
-function storageGet(keys) {
-  return new Promise<Record<string, any>>((resolve) => {
+type StorageItems = Record<string, unknown>;
+
+function storageGet(keys: string[]): Promise<StorageItems> {
+  return new Promise<StorageItems>((resolve) => {
     chrome.storage.local.get(keys, (result) => {
       resolve(result || {});
     });
   });
 }
 
-function storageSet(values) {
+function storageSet(values: StorageItems): Promise<void> {
   return new Promise<void>((resolve, reject) => {
     chrome.storage.local.set(values, () => {
       const runtimeError = chrome.runtime.lastError;

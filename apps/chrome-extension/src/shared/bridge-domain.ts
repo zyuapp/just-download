@@ -21,6 +21,11 @@ export type HandoffAuth = {
   password: string;
 };
 
+export interface SplitAuthResult {
+  url: string;
+  auth: HandoffAuth | null;
+}
+
 export const DEFAULT_SETTINGS = Object.freeze<BridgeSettings>({
   enabled: true,
   bridgeBaseUrl: 'http://127.0.0.1:17839',
@@ -70,7 +75,7 @@ export function decodeURIComponentSafe(value: string): string {
   }
 }
 
-export function splitAuthFromUrl(url: string): { url: string; auth: HandoffAuth | null } {
+export function splitAuthFromUrl(url: string): SplitAuthResult {
   try {
     const parsed = new URL(url);
     const hasEmbeddedAuth = Boolean(parsed.username || parsed.password);

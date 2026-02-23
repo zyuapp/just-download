@@ -11,6 +11,17 @@ export interface NormalizedDownloadRequest {
   authorizationHeaderFallback: string | null;
 }
 
+interface ParsedUrlAuth {
+  auth: BasicAuth;
+  rawUsername: string;
+  rawPassword: string;
+}
+
+interface ResolvedAuthPayload {
+  auth: BasicAuth | null;
+  authHeaderCandidates: string[];
+}
+
 function decodeURIComponentSafe(value: string): string {
   try {
     return decodeURIComponent(value);
@@ -32,6 +43,78 @@ function pushUniqueAuthHeader(headers: string[], header: string | null): void {
   if (!headers.includes(header)) {
     headers.push(header);
   }
+}
+
+function parseHttpUrl(rawUrl: string): URL {
+  let parsed: URL;
+  try {
+    parsed = new URL(rawUrl);
+  } catch {
+    throw new Error('Please enter a valid URL.');
+  }
+
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+    throw new Error('Only HTTP and HTTPS URLs are supported.');
+  }
+
+  return parsed;
+}
+
+function parseAuthFromUrl(parsedUrl: URL): ParsedUrlAuth | null {
+  if (!parsedUrl.username && !parsedUrl.password) {
+    return null;
+  }
+
+  const rawUsername = parsedUrl.username || '';
+  const rawPassword = parsedUrl.password || '';
+
+  return {
+    auth: {
+      type: 'basic',
+      username: decodeURIComponentSafe(rawUsername),
+      password: decodeURIComponentSafe(rawPassword)
+    },
+    rawUsername,
+    rawPassword
+  };
+}
+
+function collectAuthHeaderCandidates(auth: BasicAuth | null, parsedUrl: URL): string[] {
+  const authHeaderCandidates: string[] = [];
+
+  if (auth) {
+    pushUniqueAuthHeader(authHeaderCandidates, buildBasicAuthorization(auth.username, auth.password));
+    return authHeaderCandidates;
+  }
+
+  const urlAuth = parseAuthFromUrl(parsedUrl);
+  if (!urlAuth) {
+    return authHeaderCandidates;
+  }
+
+  pushUniqueAuthHeader(authHeaderCandidates, buildBasicAuthorization(urlAuth.auth.username, urlAuth.auth.password));
+
+  if (urlAuth.rawUsername !== urlAuth.auth.username || urlAuth.rawPassword !== urlAuth.auth.password) {
+    pushUniqueAuthHeader(authHeaderCandidates, buildBasicAuthorization(urlAuth.rawUsername, urlAuth.rawPassword));
+  }
+
+  return authHeaderCandidates;
+}
+
+function resolveAuthFromPayload(authPayload: unknown, parsedUrl: URL, maxAuthFieldLength: number): ResolvedAuthPayload {
+  const auth = parseBridgeAuth(authPayload, maxAuthFieldLength);
+  if (auth) {
+    return {
+      auth,
+      authHeaderCandidates: collectAuthHeaderCandidates(auth, parsedUrl)
+    };
+  }
+
+  const parsedUrlAuth = parseAuthFromUrl(parsedUrl);
+  return {
+    auth: parsedUrlAuth ? parsedUrlAuth.auth : null,
+    authHeaderCandidates: collectAuthHeaderCandidates(null, parsedUrl)
+  };
 }
 
 export function normalizeBridgeRequestId(value: unknown): string {
@@ -81,42 +164,8 @@ export function parseBridgeAuth(authPayload: unknown, maxAuthFieldLength = 1024)
 }
 
 export function normalizeDownloadRequest(rawUrl: string, authPayload: unknown = null, maxAuthFieldLength = 1024): NormalizedDownloadRequest {
-  let parsed: URL;
-  try {
-    parsed = new URL(rawUrl);
-  } catch {
-    throw new Error('Please enter a valid URL.');
-  }
-
-  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
-    throw new Error('Only HTTP and HTTPS URLs are supported.');
-  }
-
-  let auth = parseBridgeAuth(authPayload, maxAuthFieldLength);
-  const authHeaderCandidates: string[] = [];
-
-  if (auth) {
-    pushUniqueAuthHeader(authHeaderCandidates, buildBasicAuthorization(auth.username, auth.password));
-  }
-
-  if (!auth && (parsed.username || parsed.password)) {
-    const rawUsername = parsed.username || '';
-    const rawPassword = parsed.password || '';
-    const decodedUsername = decodeURIComponentSafe(rawUsername);
-    const decodedPassword = decodeURIComponentSafe(rawPassword);
-
-    auth = {
-      type: 'basic',
-      username: decodedUsername,
-      password: decodedPassword
-    };
-
-    pushUniqueAuthHeader(authHeaderCandidates, buildBasicAuthorization(decodedUsername, decodedPassword));
-
-    if (rawUsername !== decodedUsername || rawPassword !== decodedPassword) {
-      pushUniqueAuthHeader(authHeaderCandidates, buildBasicAuthorization(rawUsername, rawPassword));
-    }
-  }
+  const parsed = parseHttpUrl(rawUrl);
+  const { auth, authHeaderCandidates } = resolveAuthFromPayload(authPayload, parsed, maxAuthFieldLength);
 
   parsed.username = '';
   parsed.password = '';

@@ -17,11 +17,11 @@ Follow this file before making changes.
 
 ## Tooling Reality Check
 - Package manager: npm (`package-lock.json` is canonical).
-- ESLint config: not present.
+- ESLint config: present at `eslint.config.cjs` (flat config, repo-wide).
 - Prettier config: not present.
-- Test runner framework (Jest/Vitest/etc.): not configured.
-- Extension `lint` and `test` scripts are currently no-op.
-- Desktop has `typecheck`, but no dedicated `lint` or `test` script.
+- Test runner framework: Vitest (desktop + extension workspaces).
+- Desktop has dedicated `lint`, `typecheck`, and `test` scripts.
+- Extension has dedicated `lint`, `typecheck`, and `test` scripts.
 
 ## Install / Bootstrap
 - Install dependencies: `npm install`
@@ -46,17 +46,18 @@ Follow this file before making changes.
 - Desktop start alias: `npm run start`
 
 ### Lint / Typecheck
-- Monorepo lint pipeline: `npm run lint`
+- Monorepo lint: `npm run lint`
+- Desktop lint: `npm run -w @just-download/desktop lint`
+- Extension lint: `npm run -w @just-download/chrome-extension lint`
 - Desktop typecheck: `npm run -w @just-download/desktop typecheck`
 - Extension typecheck: `npm run -w @just-download/chrome-extension typecheck`
 
 ### Test (including single-test guidance)
 - Monorepo test pipeline: `npm run test`
-- Extension tests direct: `npm run -w @just-download/chrome-extension test` (no-op)
+- Extension tests direct: `npm run -w @just-download/chrome-extension test`
+- Desktop tests direct: `npm run -w @just-download/desktop test`
 - Workspace-scoped test via lage: `npm run test -- --to @just-download/chrome-extension`
-- Current status: there are no real test files and no wired test runner.
-- Single-test execution: not currently supported in this repo state.
-- If a runner is added later, use pass-through args, e.g.:
+- Single-test execution uses pass-through args, e.g.:
 - `npm run -w <workspace> test -- <path-or-pattern>`
 
 ### Package / Release

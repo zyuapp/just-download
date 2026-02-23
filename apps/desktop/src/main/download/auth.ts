@@ -17,6 +17,14 @@ export interface DownloadAuthState {
   digestChallenge: DigestChallenge | null;
 }
 
+export interface DigestAuthorizationOptions {
+  challenge: DigestChallenge;
+  username: string;
+  password: string;
+  method?: string;
+  url: string;
+}
+
 function md5Hex(value: string): string {
   return createHash('md5').update(value).digest('hex');
 }
@@ -42,17 +50,7 @@ function chooseDigestQop(rawValue: string): 'auth' | null {
   return null;
 }
 
-export function parseDigestChallenge(headerValue: string | null | undefined): DigestChallenge | null {
-  if (typeof headerValue !== 'string' || !headerValue) {
-    return null;
-  }
-
-  const digestIndex = headerValue.toLowerCase().indexOf('digest ');
-  if (digestIndex < 0) {
-    return null;
-  }
-
-  const digestPart = headerValue.slice(digestIndex + 7);
+function parseDigestParams(digestPart: string): Record<string, string> {
   const params: Record<string, string> = {};
   const paramPattern = /([a-zA-Z0-9_-]+)\s*=\s*(?:"((?:[^"\\]|\\.)*)"|([^,\s]+))/g;
 
@@ -68,75 +66,57 @@ export function parseDigestChallenge(headerValue: string | null | undefined): Di
     }
   }
 
-  if (!params.realm || !params.nonce) {
-    return null;
-  }
-
-  const algorithm = (params.algorithm || 'MD5').toUpperCase();
-  if (algorithm !== 'MD5' && algorithm !== 'MD5-SESS') {
-    return null;
-  }
-
-  const qop = chooseDigestQop(params.qop || '');
-  if (params.qop && !qop) {
-    return null;
-  }
-
-  return {
-    realm: params.realm,
-    nonce: params.nonce,
-    opaque: params.opaque || null,
-    algorithm,
-    qop
-  };
+  return params;
 }
 
-export function createDigestAuthorizationHeader(options: {
-  challenge: DigestChallenge;
-  username: string;
-  password: string;
-  method?: string;
-  url: string;
-} | null | undefined): string | null {
-  if (!options || typeof options !== 'object') {
-    return null;
+function resolveDigestAlgorithm(rawAlgorithm: string | undefined): DigestChallenge['algorithm'] | null {
+  const algorithm = (rawAlgorithm || 'MD5').toUpperCase();
+  if (algorithm === 'MD5' || algorithm === 'MD5-SESS') {
+    return algorithm;
   }
 
-  const challenge = options.challenge;
-  const username = typeof options.username === 'string' ? options.username : '';
-  const password = typeof options.password === 'string' ? options.password : '';
-  const method = typeof options.method === 'string' && options.method ? options.method.toUpperCase() : 'GET';
-  const targetUrl = typeof options.url === 'string' ? options.url : '';
+  return null;
+}
 
-  if (!challenge || !challenge.realm || !challenge.nonce) {
-    return null;
-  }
-
-  let uri = '/';
+function resolveDigestUri(targetUrl: string): string | null {
   try {
     const parsed = new URL(targetUrl);
-    uri = `${parsed.pathname || '/'}${parsed.search || ''}`;
+    return `${parsed.pathname || '/'}${parsed.search || ''}`;
   } catch {
     return null;
   }
+}
 
-  const cnonce = randomUUID().replace(/-/g, '');
-  const nonceCount = '00000001';
-
+function buildDigestResponseValue(
+  challenge: DigestChallenge,
+  username: string,
+  password: string,
+  method: string,
+  uri: string,
+  nonceCount: string,
+  cnonce: string
+): string {
   let ha1 = md5Hex(`${username}:${challenge.realm}:${password}`);
   if (challenge.algorithm === 'MD5-SESS') {
     ha1 = md5Hex(`${ha1}:${challenge.nonce}:${cnonce}`);
   }
 
   const ha2 = md5Hex(`${method}:${uri}`);
-
-  let responseDigest = '';
-  if (challenge.qop) {
-    responseDigest = md5Hex(`${ha1}:${challenge.nonce}:${nonceCount}:${cnonce}:${challenge.qop}:${ha2}`);
-  } else {
-    responseDigest = md5Hex(`${ha1}:${challenge.nonce}:${ha2}`);
+  if (!challenge.qop) {
+    return md5Hex(`${ha1}:${challenge.nonce}:${ha2}`);
   }
 
+  return md5Hex(`${ha1}:${challenge.nonce}:${nonceCount}:${cnonce}:${challenge.qop}:${ha2}`);
+}
+
+function buildDigestHeaderParts(
+  challenge: DigestChallenge,
+  username: string,
+  uri: string,
+  responseDigest: string,
+  nonceCount: string,
+  cnonce: string
+): string[] {
   const parts = [
     `Digest username="${escapeDigestValue(username)}"`,
     `realm="${escapeDigestValue(challenge.realm)}"`,
@@ -155,6 +135,69 @@ export function createDigestAuthorizationHeader(options: {
     parts.push(`nc=${nonceCount}`);
     parts.push(`cnonce="${cnonce}"`);
   }
+
+  return parts;
+}
+
+export function parseDigestChallenge(headerValue: string | null | undefined): DigestChallenge | null {
+  if (typeof headerValue !== 'string' || !headerValue) {
+    return null;
+  }
+
+  const digestIndex = headerValue.toLowerCase().indexOf('digest ');
+  if (digestIndex < 0) {
+    return null;
+  }
+
+  const params = parseDigestParams(headerValue.slice(digestIndex + 7));
+
+  if (!params.realm || !params.nonce) {
+    return null;
+  }
+
+  const algorithm = resolveDigestAlgorithm(params.algorithm);
+  if (!algorithm) {
+    return null;
+  }
+
+  const qop = chooseDigestQop(params.qop || '');
+  if (params.qop && !qop) {
+    return null;
+  }
+
+  return {
+    realm: params.realm,
+    nonce: params.nonce,
+    opaque: params.opaque || null,
+    algorithm,
+    qop
+  };
+}
+
+export function createDigestAuthorizationHeader(options: DigestAuthorizationOptions | null | undefined): string | null {
+  if (!options || typeof options !== 'object') {
+    return null;
+  }
+
+  const challenge = options.challenge;
+  const username = typeof options.username === 'string' ? options.username : '';
+  const password = typeof options.password === 'string' ? options.password : '';
+  const method = typeof options.method === 'string' && options.method ? options.method.toUpperCase() : 'GET';
+  const targetUrl = typeof options.url === 'string' ? options.url : '';
+
+  if (!challenge || !challenge.realm || !challenge.nonce) {
+    return null;
+  }
+
+  const uri = resolveDigestUri(targetUrl);
+  if (!uri) {
+    return null;
+  }
+
+  const cnonce = randomUUID().replace(/-/g, '');
+  const nonceCount = '00000001';
+  const responseDigest = buildDigestResponseValue(challenge, username, password, method, uri, nonceCount, cnonce);
+  const parts = buildDigestHeaderParts(challenge, username, uri, responseDigest, nonceCount, cnonce);
 
   return parts.join(', ');
 }

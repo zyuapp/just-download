@@ -19,9 +19,12 @@
     "test:all": "npm run -w @just-download/desktop test && npm run -w @just-download/chrome-extension test",
     "precommit:verify": "npm run typecheck && npm run test:all",
     "prepare": "node scripts/install-git-hooks.cjs",
-    "lint": "lage lint --allow-no-target-runs"
+    "lint": "eslint . --max-warnings 0"
   },
   "devDependencies": {
+    "@typescript-eslint/eslint-plugin": "^8.46.0",
+    "@typescript-eslint/parser": "^8.46.0",
+    "eslint": "^9.39.0",
     "lage": "^2.14.18",
     "vitest": "^3.2.4"
   }

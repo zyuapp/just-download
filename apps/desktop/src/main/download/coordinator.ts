@@ -37,6 +37,33 @@ export interface RunDownloadDependencies {
 
 const pendingRestartRequests = new Set<string>();
 
+function shouldIgnoreRuntimeFailure(reason: string | null): boolean {
+  return reason === 'paused' || reason === 'cancelled';
+}
+
+function shouldRestartAfterPause(
+  runtime: DownloadRuntime,
+  latest: DownloadRecordLike | null,
+  hadQueuedRestartRequest: boolean,
+  status: DownloadStatusMap
+): latest is DownloadRecordLike {
+  if (runtime.reason !== 'paused' || !latest) {
+    return false;
+  }
+
+  return latest.status === status.DOWNLOADING || hadQueuedRestartRequest;
+}
+
+function resetDownloadForRestart(download: DownloadRecordLike, dependencies: RunDownloadDependencies): void {
+  if (download.status === dependencies.status.DOWNLOADING) {
+    return;
+  }
+
+  download.status = dependencies.status.DOWNLOADING;
+  download.error = null;
+  dependencies.flushProgressSync(download.id);
+}
+
 export async function runDownloadWithDependencies(
   downloadId: string,
   dependencies: RunDownloadDependencies
@@ -79,7 +106,7 @@ export async function runDownloadWithDependencies(
 
     dependencies.flushProgressSync(download.id);
   } catch (error) {
-    if (runtime.reason === 'paused' || runtime.reason === 'cancelled') {
+    if (shouldIgnoreRuntimeFailure(runtime.reason)) {
       return;
     }
 
@@ -93,22 +120,11 @@ export async function runDownloadWithDependencies(
     const hadQueuedRestartRequest = pendingRestartRequests.delete(downloadId);
     const latest = dependencies.getDownloadById(downloadId);
 
-    const shouldRestartAfterPause = runtime.reason === 'paused'
-      && latest
-      && (
-        latest.status === dependencies.status.DOWNLOADING
-        || hadQueuedRestartRequest
-      );
-
-    if (!shouldRestartAfterPause) {
+    if (!shouldRestartAfterPause(runtime, latest, hadQueuedRestartRequest, dependencies.status)) {
       return;
     }
 
-    if (latest.status !== dependencies.status.DOWNLOADING) {
-      latest.status = dependencies.status.DOWNLOADING;
-      latest.error = null;
-      dependencies.flushProgressSync(latest.id);
-    }
+    resetDownloadForRestart(latest, dependencies);
 
     await runDownloadWithDependencies(downloadId, dependencies);
   }

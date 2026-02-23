@@ -12,7 +12,9 @@ import {
 
 type StatusTone = 'neutral' | 'success' | 'error';
 
-const elements: {
+type StorageItems = Record<string, unknown>;
+
+interface OptionsElements {
   enabled: HTMLInputElement | null;
   bridgeUrl: HTMLInputElement | null;
   timeoutMs: HTMLInputElement | null;
@@ -24,7 +26,9 @@ const elements: {
   lastSuccess: HTMLElement | null;
   lastFallback: HTMLElement | null;
   lastError: HTMLElement | null;
-} = {
+}
+
+const elements: OptionsElements = {
   enabled: null,
   bridgeUrl: null,
   timeoutMs: null,
@@ -38,15 +42,15 @@ const elements: {
   lastError: null
 };
 
-function storageGet(keys) {
-  return new Promise<Record<string, any>>((resolve) => {
+function storageGet(keys: string[]): Promise<StorageItems> {
+  return new Promise<StorageItems>((resolve) => {
     chrome.storage.local.get(keys, (result) => {
       resolve(result || {});
     });
   });
 }
 
-function storageSet(values) {
+function storageSet(values: StorageItems): Promise<void> {
   return new Promise<void>((resolve, reject) => {
     chrome.storage.local.set(values, () => {
       const runtimeError = chrome.runtime.lastError;
