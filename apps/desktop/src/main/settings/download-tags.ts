@@ -1,27 +1,10 @@
 import { randomUUID } from 'crypto';
 
+import type { DownloadTag, DownloadTagInput, DownloadTagSettings } from '../../shared/types';
+
 const MAX_TAG_COUNT = 100;
 const MAX_TAG_NAME_LENGTH = 80;
 const MAX_DIRECTORY_PATH_LENGTH = 1024;
-
-export interface DownloadTag {
-  id: string;
-  name: string;
-  directoryPath: string;
-  createdAt: number;
-  updatedAt: number;
-}
-
-export interface DownloadTagSettings {
-  tags: DownloadTag[];
-  lastSelectedTagId: string | null;
-}
-
-export interface DownloadTagInput {
-  id?: string | null;
-  name?: string;
-  directoryPath?: string;
-}
 
 interface UpsertDownloadTagOptions {
   createId?: () => string;

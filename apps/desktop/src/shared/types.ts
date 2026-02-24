@@ -13,6 +13,7 @@ export interface DownloadRecord {
   url: string;
   filename: string;
   savePath: string;
+  tagId?: string | null;
   totalBytes: number;
   downloadedBytes: number;
   status: DownloadStatus;
@@ -30,8 +31,32 @@ export interface DraftDownloadRequest {
   createdAt: number;
 }
 
+export interface DownloadTag {
+  id: string;
+  name: string;
+  directoryPath: string;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface DownloadTagSettings {
+  tags: DownloadTag[];
+  lastSelectedTagId: string | null;
+}
+
+export interface StartDownloadOptions {
+  auth?: unknown;
+  tagId?: string | null;
+}
+
+export interface DownloadTagInput {
+  id?: string | null;
+  name?: string;
+  directoryPath?: string;
+}
+
 export interface ElectronAPI {
-  startDownload: (url: string) => Promise<DownloadRecord>;
+  startDownload: (url: string, options?: StartDownloadOptions) => Promise<DownloadRecord>;
   pauseDownload: (id: string) => Promise<void>;
   resumeDownload: (id: string) => Promise<void>;
   cancelDownload: (id: string) => Promise<void>;
@@ -40,6 +65,10 @@ export interface ElectronAPI {
   openFile: (id: string) => Promise<void>;
   openFolder: (id: string) => Promise<void>;
   getDownloads: () => Promise<DownloadRecord[]>;
+  getDownloadTagSettings: () => Promise<DownloadTagSettings>;
+  upsertDownloadTag: (input: DownloadTagInput) => Promise<DownloadTagSettings>;
+  deleteDownloadTag: (tagId: string) => Promise<DownloadTagSettings>;
+  pickDownloadDirectory: () => Promise<string | null>;
   onDraftRequested: (callback: (draft: DraftDownloadRequest) => void) => () => void;
   notifyRendererReady: () => void;
   onDownloadsChanged: (callback: (downloads: DownloadRecord[]) => void) => () => void;
