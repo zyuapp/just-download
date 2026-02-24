@@ -1,3 +1,4 @@
+/* eslint-disable max-lines */
 import { reconcileDownloadItems } from './download-list-reconciler.js';
 import { findTagName, getTagOptions, resolveSelectedTagId } from './download-tags.js';
 
@@ -10,6 +11,7 @@ interface RendererState {
   downloadTagSettings: DownloadTagSettings;
   selectedTagId: string | null;
   editingTagId: string | null;
+  activeSettingsTab: 'destinations' | 'general';
   downloadSpeeds: Map<string, DownloadSpeedState>;
   downloadItems: Map<string, HTMLElement>;
   contextTargetId: string | null;
@@ -32,10 +34,15 @@ interface DownloadTagBadge {
 
 interface ElementsState {
   addButton: HTMLButtonElement | null;
+  manageDestinationsButton: HTMLButtonElement | null;
   settingsToggleButton: HTMLButtonElement | null;
   settingsPanel: HTMLElement | null;
   settingsPanelBackdrop: HTMLElement | null;
   settingsCloseButton: HTMLButtonElement | null;
+  settingsTabDestinationsButton: HTMLButtonElement | null;
+  settingsTabGeneralButton: HTMLButtonElement | null;
+  settingsTabDestinationsPanel: HTMLElement | null;
+  settingsTabGeneralPanel: HTMLElement | null;
   tagList: HTMLElement | null;
   tagForm: HTMLFormElement | null;
   tagIdInput: HTMLInputElement | null;
@@ -44,6 +51,7 @@ interface ElementsState {
   tagBrowseButton: HTMLButtonElement | null;
   tagSaveButton: HTMLButtonElement | null;
   tagResetButton: HTMLButtonElement | null;
+  tagDeleteButton: HTMLButtonElement | null;
   urlDialog: HTMLElement | null;
   urlDialogBackdrop: HTMLElement | null;
   urlInput: HTMLInputElement | null;
@@ -64,6 +72,7 @@ const state: RendererState = {
   },
   selectedTagId: null,
   editingTagId: null,
+  activeSettingsTab: 'destinations',
   downloadSpeeds: new Map(),
   downloadItems: new Map(),
   contextTargetId: null,
@@ -74,10 +83,15 @@ const state: RendererState = {
 
 const elements: ElementsState = {
   addButton: null,
+  manageDestinationsButton: null,
   settingsToggleButton: null,
   settingsPanel: null,
   settingsPanelBackdrop: null,
   settingsCloseButton: null,
+  settingsTabDestinationsButton: null,
+  settingsTabGeneralButton: null,
+  settingsTabDestinationsPanel: null,
+  settingsTabGeneralPanel: null,
   tagList: null,
   tagForm: null,
   tagIdInput: null,
@@ -86,6 +100,7 @@ const elements: ElementsState = {
   tagBrowseButton: null,
   tagSaveButton: null,
   tagResetButton: null,
+  tagDeleteButton: null,
   urlDialog: null,
   urlDialogBackdrop: null,
   urlInput: null,
@@ -384,7 +399,10 @@ function getDownloadErrorMarkup(download: DownloadRecord): string {
 }
 
 function getDownloadTagBadge(download: DownloadRecord): DownloadTagBadge {
-  const name = findTagName(state.downloadTagSettings, download.tagId || null);
+  const selectedId = typeof download.destinationId === 'string' && download.destinationId
+    ? download.destinationId
+    : (download.tagId || null);
+  const name = findTagName(state.downloadTagSettings, selectedId);
   if (!name) {
     return {
       name: null,
@@ -610,10 +628,23 @@ function readDownloadTagSettings(settings: unknown): DownloadTagSettings {
     };
   }
 
-  const value = settings as DownloadTagSettings;
+  const value = settings as {
+    tags?: unknown;
+    lastSelectedTagId?: unknown;
+    destinations?: unknown;
+    lastSelectedDestinationId?: unknown;
+  };
+
+  const tags = Array.isArray(value.tags)
+    ? value.tags
+    : (Array.isArray(value.destinations) ? value.destinations : []);
+  const lastSelectedTagId = typeof value.lastSelectedTagId === 'string'
+    ? value.lastSelectedTagId
+    : (typeof value.lastSelectedDestinationId === 'string' ? value.lastSelectedDestinationId : null);
+
   return {
-    tags: Array.isArray(value.tags) ? value.tags : [],
-    lastSelectedTagId: typeof value.lastSelectedTagId === 'string' ? value.lastSelectedTagId : null
+    tags,
+    lastSelectedTagId
   };
 }
 
@@ -621,11 +652,31 @@ function isSettingsPanelOpen(): boolean {
   return Boolean(elements.settingsPanel && !elements.settingsPanel.classList.contains('hidden'));
 }
 
+function setActiveSettingsTab(tab: 'destinations' | 'general'): void {
+  state.activeSettingsTab = tab;
+
+  const isDestinations = tab === 'destinations';
+
+  if (elements.settingsTabDestinationsButton) {
+    elements.settingsTabDestinationsButton.setAttribute('aria-selected', isDestinations ? 'true' : 'false');
+  }
+  if (elements.settingsTabGeneralButton) {
+    elements.settingsTabGeneralButton.setAttribute('aria-selected', isDestinations ? 'false' : 'true');
+  }
+  if (elements.settingsTabDestinationsPanel) {
+    elements.settingsTabDestinationsPanel.classList.toggle('hidden', !isDestinations);
+  }
+  if (elements.settingsTabGeneralPanel) {
+    elements.settingsTabGeneralPanel.classList.toggle('hidden', isDestinations);
+  }
+}
+
 function showSettingsPanel(): void {
   if (!elements.settingsPanel) {
     return;
   }
 
+  setActiveSettingsTab('destinations');
   elements.settingsPanel.classList.remove('hidden');
   elements.settingsPanel.setAttribute('aria-hidden', 'false');
   elements.settingsPanel.dataset.open = 'true';
@@ -664,7 +715,11 @@ function clearTagForm(): void {
   }
 
   if (elements.tagSaveButton) {
-    elements.tagSaveButton.textContent = 'Save Tag';
+    elements.tagSaveButton.textContent = 'Save';
+  }
+
+  if (elements.tagDeleteButton) {
+    elements.tagDeleteButton.disabled = true;
   }
 }
 
@@ -674,17 +729,17 @@ function renderTagList(): void {
   }
 
   if (state.downloadTagSettings.tags.length === 0) {
-    elements.tagList.innerHTML = '<div class="text-[12px] text-[var(--text-faint)]">No tags yet. Add one below.</div>';
+    elements.tagList.innerHTML = '<div class="text-[12px] text-[var(--text-faint)]">No destinations yet. Create one in the editor.</div>';
     return;
   }
 
   elements.tagList.innerHTML = state.downloadTagSettings.tags.map((tag) => `
-    <article class="tag-entry" data-tag-id="${escapeHtml(tag.id)}">
-      <div class="tag-entry-name">${escapeHtml(tag.name)}</div>
-      <div class="tag-entry-path" title="${escapeHtml(tag.directoryPath)}">${escapeHtml(tag.directoryPath)}</div>
-      <div class="tag-entry-actions">
-        <button type="button" class="tag-entry-btn" data-action="edit" data-tag-id="${escapeHtml(tag.id)}">Edit</button>
-        <button type="button" class="tag-entry-btn" data-action="delete" data-tag-id="${escapeHtml(tag.id)}">Delete</button>
+    <article class="destination-entry" data-tag-id="${escapeHtml(tag.id)}" data-active="${state.editingTagId === tag.id ? 'true' : 'false'}">
+      <div class="destination-entry-name">${escapeHtml(tag.name)}</div>
+      <div class="destination-entry-path" title="${escapeHtml(tag.directoryPath)}">${escapeHtml(tag.directoryPath)}</div>
+      <div class="destination-entry-actions">
+        <button type="button" class="destination-entry-btn" data-action="edit" data-tag-id="${escapeHtml(tag.id)}">Edit</button>
+        <button type="button" class="destination-entry-btn" data-action="delete" data-tag-id="${escapeHtml(tag.id)}">Delete</button>
       </div>
     </article>
   `).join('');
@@ -702,7 +757,7 @@ function renderTagSelectOptions(): void {
     .map((option) => `<option value="${escapeHtml(option.id)}">${escapeHtml(option.label)}</option>`)
     .join('');
 
-  elements.tagSelect.innerHTML = `<option value="">System Downloads (default)</option>${options}`;
+  elements.tagSelect.innerHTML = `<option value="">System Downloads</option>${options}`;
   elements.tagSelect.value = selectedTagId || '';
 }
 
@@ -736,17 +791,21 @@ function editDownloadTag(tagId: string): void {
   elements.tagIdInput.value = tag.id;
   elements.tagNameInput.value = tag.name;
   elements.tagPathInput.value = tag.directoryPath;
-  elements.tagSaveButton.textContent = 'Update Tag';
+  elements.tagSaveButton.textContent = 'Update';
+  if (elements.tagDeleteButton) {
+    elements.tagDeleteButton.disabled = false;
+  }
   elements.tagNameInput.focus();
   elements.tagNameInput.select();
+  renderTagList();
 }
 
 async function refreshDownloadTagSettings(): Promise<void> {
   try {
-    const settings = await getAPI().getDownloadTagSettings();
+    const settings = await getAPI().getDownloadDestinationSettings();
     applyDownloadTagSettings(settings);
   } catch (error) {
-    const message = error instanceof Error ? error.message : 'Unable to load tag settings.';
+    const message = error instanceof Error ? error.message : 'Unable to load destination settings.';
     window.alert(message);
   }
 }
@@ -759,14 +818,14 @@ async function submitTagForm(): Promise<void> {
   const name = elements.tagNameInput.value.trim();
   const directoryPath = elements.tagPathInput.value.trim();
   if (!name || !directoryPath) {
-    window.alert('Please provide both tag name and directory.');
+    window.alert('Please provide both destination name and directory.');
     return;
   }
 
   try {
     elements.tagSaveButton.disabled = true;
 
-    const settings = await getAPI().upsertDownloadTag({
+    const settings = await getAPI().upsertDownloadDestination({
       id: state.editingTagId,
       name,
       directoryPath
@@ -775,7 +834,7 @@ async function submitTagForm(): Promise<void> {
     applyDownloadTagSettings(settings);
     clearTagForm();
   } catch (error) {
-    const message = error instanceof Error ? error.message : 'Unable to save tag.';
+    const message = error instanceof Error ? error.message : 'Unable to save destination.';
     window.alert(message);
   } finally {
     elements.tagSaveButton.disabled = false;
@@ -783,15 +842,18 @@ async function submitTagForm(): Promise<void> {
 }
 
 async function deleteTag(tagId: string): Promise<void> {
-  if (!window.confirm('Delete this download tag? Existing downloads will no longer show the badge.')) {
+  if (!window.confirm('Delete this destination? Existing downloads will no longer show the badge.')) {
     return;
   }
 
   try {
-    const settings = await getAPI().deleteDownloadTag(tagId);
+    const settings = await getAPI().deleteDownloadDestination(tagId);
     applyDownloadTagSettings(settings);
+    if (state.editingTagId === tagId) {
+      clearTagForm();
+    }
   } catch (error) {
-    const message = error instanceof Error ? error.message : 'Unable to delete tag.';
+    const message = error instanceof Error ? error.message : 'Unable to delete destination.';
     window.alert(message);
   }
 }
@@ -863,7 +925,7 @@ async function startDownloadFromInput(): Promise<void> {
 
   try {
     elements.startButton.disabled = true;
-    await getAPI().startDownload(value, { tagId: selectedTagId });
+    await getAPI().startDownload(value, { destinationId: selectedTagId, tagId: selectedTagId });
     state.selectedTagId = selectedTagId;
     hideUrlDialog();
     void refreshDownloadTagSettings();
@@ -931,16 +993,24 @@ async function refreshDownloads(): Promise<void> {
 function hasRequiredElements(): boolean {
   const required = [
     elements.addButton,
+    elements.manageDestinationsButton,
     elements.settingsToggleButton,
     elements.settingsPanel,
     elements.settingsPanelBackdrop,
     elements.settingsCloseButton,
+    elements.settingsTabDestinationsButton,
+    elements.settingsTabGeneralButton,
+    elements.settingsTabDestinationsPanel,
+    elements.settingsTabGeneralPanel,
     elements.tagList,
     elements.tagForm,
+    elements.tagIdInput,
     elements.tagNameInput,
     elements.tagPathInput,
     elements.tagBrowseButton,
+    elements.tagSaveButton,
     elements.tagResetButton,
+    elements.tagDeleteButton,
     elements.urlDialog,
     elements.urlDialogBackdrop,
     elements.cancelButton,
@@ -954,13 +1024,25 @@ function hasRequiredElements(): boolean {
   return required.every(Boolean);
 }
 
+// eslint-disable-next-line complexity
 function bindPrimaryControls(): void {
   elements.addButton?.addEventListener('click', () => {
     showUrlDialog();
   });
+  elements.manageDestinationsButton?.addEventListener('click', () => {
+    hideUrlDialog();
+    showSettingsPanel();
+    setActiveSettingsTab('destinations');
+  });
   elements.settingsToggleButton?.addEventListener('click', showSettingsPanel);
   elements.settingsPanelBackdrop?.addEventListener('click', hideSettingsPanel);
   elements.settingsCloseButton?.addEventListener('click', hideSettingsPanel);
+  elements.settingsTabDestinationsButton?.addEventListener('click', () => {
+    setActiveSettingsTab('destinations');
+  });
+  elements.settingsTabGeneralButton?.addEventListener('click', () => {
+    setActiveSettingsTab('general');
+  });
   elements.urlDialogBackdrop?.addEventListener('click', hideUrlDialog);
   elements.cancelButton?.addEventListener('click', hideUrlDialog);
   elements.startButton?.addEventListener('click', () => {
@@ -995,6 +1077,16 @@ function bindTagSettingsEvents(): void {
 
   elements.tagResetButton?.addEventListener('click', () => {
     clearTagForm();
+    elements.tagNameInput?.focus();
+  });
+
+  elements.tagDeleteButton?.addEventListener('click', () => {
+    const currentTagId = state.editingTagId;
+    if (!currentTagId) {
+      return;
+    }
+
+    void deleteTag(currentTagId);
   });
 
   elements.tagForm?.addEventListener('submit', (event: SubmitEvent) => {
@@ -1095,22 +1187,28 @@ function bindEvents(): void {
 
 function cacheElements(): void {
   elements.addButton = document.getElementById('add-btn') as HTMLButtonElement | null;
+  elements.manageDestinationsButton = document.getElementById('manage-destinations') as HTMLButtonElement | null;
   elements.settingsToggleButton = document.getElementById('settings-toggle') as HTMLButtonElement | null;
   elements.settingsPanel = document.getElementById('settings-panel');
   elements.settingsPanelBackdrop = document.getElementById('settings-panel-backdrop');
   elements.settingsCloseButton = document.getElementById('settings-close') as HTMLButtonElement | null;
-  elements.tagList = document.getElementById('tag-list');
-  elements.tagForm = document.getElementById('tag-form') as HTMLFormElement | null;
-  elements.tagIdInput = document.getElementById('tag-id') as HTMLInputElement | null;
-  elements.tagNameInput = document.getElementById('tag-name') as HTMLInputElement | null;
-  elements.tagPathInput = document.getElementById('tag-path') as HTMLInputElement | null;
-  elements.tagBrowseButton = document.getElementById('tag-browse') as HTMLButtonElement | null;
-  elements.tagSaveButton = document.getElementById('tag-save') as HTMLButtonElement | null;
-  elements.tagResetButton = document.getElementById('tag-reset') as HTMLButtonElement | null;
+  elements.settingsTabDestinationsButton = document.getElementById('settings-tab-destinations') as HTMLButtonElement | null;
+  elements.settingsTabGeneralButton = document.getElementById('settings-tab-general') as HTMLButtonElement | null;
+  elements.settingsTabDestinationsPanel = document.getElementById('settings-tabpanel-destinations');
+  elements.settingsTabGeneralPanel = document.getElementById('settings-tabpanel-general');
+  elements.tagList = document.getElementById('destination-list');
+  elements.tagForm = document.getElementById('destination-form') as HTMLFormElement | null;
+  elements.tagIdInput = document.getElementById('destination-id') as HTMLInputElement | null;
+  elements.tagNameInput = document.getElementById('destination-name') as HTMLInputElement | null;
+  elements.tagPathInput = document.getElementById('destination-path') as HTMLInputElement | null;
+  elements.tagBrowseButton = document.getElementById('destination-browse') as HTMLButtonElement | null;
+  elements.tagSaveButton = document.getElementById('destination-save') as HTMLButtonElement | null;
+  elements.tagResetButton = document.getElementById('destination-reset') as HTMLButtonElement | null;
+  elements.tagDeleteButton = document.getElementById('destination-delete') as HTMLButtonElement | null;
   elements.urlDialog = document.getElementById('url-dialog');
   elements.urlDialogBackdrop = document.getElementById('url-dialog-backdrop');
   elements.urlInput = document.getElementById('url-input') as HTMLInputElement | null;
-  elements.tagSelect = document.getElementById('download-tag') as HTMLSelectElement | null;
+  elements.tagSelect = document.getElementById('download-destination') as HTMLSelectElement | null;
   elements.startButton = document.getElementById('start-download') as HTMLButtonElement | null;
   elements.cancelButton = document.getElementById('cancel-dialog') as HTMLButtonElement | null;
   elements.downloadList = document.getElementById('download-list');

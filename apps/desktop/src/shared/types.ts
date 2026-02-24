@@ -13,6 +13,7 @@ export interface DownloadRecord {
   url: string;
   filename: string;
   savePath: string;
+  destinationId?: string | null;
   tagId?: string | null;
   totalBytes: number;
   downloadedBytes: number;
@@ -31,12 +32,19 @@ export interface DraftDownloadRequest {
   createdAt: number;
 }
 
-export interface DownloadTag {
+export interface DownloadDestination {
   id: string;
   name: string;
   directoryPath: string;
   createdAt: number;
   updatedAt: number;
+}
+
+export interface DownloadTag extends DownloadDestination {}
+
+export interface DownloadDestinationSettings {
+  destinations: DownloadDestination[];
+  lastSelectedDestinationId: string | null;
 }
 
 export interface DownloadTagSettings {
@@ -46,14 +54,17 @@ export interface DownloadTagSettings {
 
 export interface StartDownloadOptions {
   auth?: unknown;
+  destinationId?: string | null;
   tagId?: string | null;
 }
 
-export interface DownloadTagInput {
+export interface DownloadDestinationInput {
   id?: string | null;
   name?: string;
   directoryPath?: string;
 }
+
+export type DownloadTagInput = DownloadDestinationInput;
 
 export interface ElectronAPI {
   startDownload: (url: string, options?: StartDownloadOptions) => Promise<DownloadRecord>;
@@ -65,6 +76,9 @@ export interface ElectronAPI {
   openFile: (id: string) => Promise<void>;
   openFolder: (id: string) => Promise<void>;
   getDownloads: () => Promise<DownloadRecord[]>;
+  getDownloadDestinationSettings: () => Promise<DownloadDestinationSettings>;
+  upsertDownloadDestination: (input: DownloadDestinationInput) => Promise<DownloadDestinationSettings>;
+  deleteDownloadDestination: (destinationId: string) => Promise<DownloadDestinationSettings>;
   getDownloadTagSettings: () => Promise<DownloadTagSettings>;
   upsertDownloadTag: (input: DownloadTagInput) => Promise<DownloadTagSettings>;
   deleteDownloadTag: (tagId: string) => Promise<DownloadTagSettings>;

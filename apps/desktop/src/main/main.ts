@@ -1,3 +1,4 @@
+/* eslint-disable max-lines */
 const { randomUUID } = require('crypto');
 const fs = require('fs');
 const fsp = require('fs/promises');
@@ -21,7 +22,14 @@ const { runDownloadWithDependencies } = require('./download/coordinator');
 const { fetchMetadata } = require('./download/http-client');
 const { downloadPartWithHelpers } = require('./download/part-downloader');
 const { createBridgeRequestHandler } = require('./bridge/server');
-const { deleteDownloadTag, normalizeDownloadTagSettings, resolveDownloadTarget, setLastSelectedTag, upsertDownloadTag } = require('./settings/download-tags');
+const {
+  deleteDownloadDestination,
+  normalizeDownloadDestinationSettings,
+  resolveDownloadDestinationTarget,
+  toLegacyDownloadTagSettings,
+  upsertDownloadDestination,
+  setLastSelectedDestination
+} = require('./settings/download-destinations');
 
 const PART_COUNT = 4;
 const PROGRESS_SYNC_INTERVAL_MS = 250;
@@ -33,6 +41,7 @@ const BRIDGE_MAX_BODY_BYTES = 32 * 1024;
 const BRIDGE_REQUEST_TTL_MS = 5 * 60 * 1000;
 const APP_PROTOCOL_SCHEME = 'justdownload';
 const MAX_DRAFT_QUEUE_SIZE = 20;
+const DOWNLOAD_DESTINATION_SETTINGS_KEY = 'downloadDestinationSettings';
 const DOWNLOAD_TAG_SETTINGS_KEY = 'downloadTagSettings';
 
 const APP_ICON_SVG = `
@@ -111,9 +120,9 @@ let isRendererReady = false;
 
 let store = null;
 let downloads = [];
-let downloadTagSettings = {
-  tags: [],
-  lastSelectedTagId: null
+let downloadDestinationSettings = {
+  destinations: [],
+  lastSelectedDestinationId: null
 };
 
 let downloadsDir = '';
@@ -151,12 +160,17 @@ function serializePart(part) {
 }
 
 function serializeDownload(download) {
+  const destinationId = typeof download.destinationId === 'string' && download.destinationId
+    ? download.destinationId
+    : (typeof download.tagId === 'string' && download.tagId ? download.tagId : null);
+
   return {
     id: download.id,
     url: download.url,
     filename: download.filename,
     savePath: download.savePath,
-    tagId: typeof download.tagId === 'string' && download.tagId ? download.tagId : null,
+    destinationId,
+    tagId: destinationId,
     totalBytes: Number.isFinite(download.totalBytes) ? download.totalBytes : 0,
     downloadedBytes: Number.isFinite(download.downloadedBytes) ? download.downloadedBytes : 0,
     status: download.status,
@@ -179,16 +193,22 @@ function persistDownloads() {
   store.set('downloads', downloads.map(serializeDownload));
 }
 
-function publicDownloadTagSettings() {
-  return normalizeDownloadTagSettings(downloadTagSettings);
+function publicDownloadDestinationSettings() {
+  return normalizeDownloadDestinationSettings(downloadDestinationSettings);
 }
 
-function persistDownloadTagSettings() {
+function publicDownloadTagSettings() {
+  return toLegacyDownloadTagSettings(publicDownloadDestinationSettings());
+}
+
+function persistDownloadDestinationSettings() {
   if (!store) {
     return;
   }
 
-  store.set(DOWNLOAD_TAG_SETTINGS_KEY, publicDownloadTagSettings());
+  const destinationSettings = publicDownloadDestinationSettings();
+  store.set(DOWNLOAD_DESTINATION_SETTINGS_KEY, destinationSettings);
+  store.set(DOWNLOAD_TAG_SETTINGS_KEY, toLegacyDownloadTagSettings(destinationSettings));
 }
 
 function notifyDownloadsChanged() {
@@ -571,7 +591,11 @@ function normalizePersistedSavePath(item, filename) {
   return path.join(downloadsDir, filename);
 }
 
-function normalizePersistedTagId(item) {
+function normalizePersistedDestinationId(item) {
+  if (typeof item.destinationId === 'string' && item.destinationId) {
+    return item.destinationId;
+  }
+
   return typeof item.tagId === 'string' && item.tagId ? item.tagId : null;
 }
 
@@ -593,7 +617,8 @@ function normalizePersistedDownload(item) {
     url: item.url,
     filename,
     savePath: normalizePersistedSavePath(item, filename),
-    tagId: normalizePersistedTagId(item),
+    destinationId: normalizePersistedDestinationId(item),
+    tagId: normalizePersistedDestinationId(item),
     totalBytes: Number.isFinite(item.totalBytes) ? item.totalBytes : 0,
     downloadedBytes: sumDownloadedBytes(parts),
     status: normalizePersistedStatus(item.status),
@@ -707,18 +732,26 @@ async function runDownload(downloadId) {
   });
 }
 
+// eslint-disable-next-line complexity
 async function startDownload(rawUrl, options: unknown = {}) {
   const optionRecord = options && typeof options === 'object'
     ? options as Record<string, unknown>
     : null;
   const authPayload = optionRecord ? optionRecord.auth || null : null;
-  const selectedTagId = optionRecord && typeof optionRecord.tagId === 'string'
-    ? optionRecord.tagId.trim()
+  const selectedDestinationId = optionRecord && typeof optionRecord.destinationId === 'string'
+    ? optionRecord.destinationId.trim()
+    : (optionRecord && typeof optionRecord.tagId === 'string' ? optionRecord.tagId.trim() : null);
+  const normalizedSelectedDestinationId = selectedDestinationId
+    ? selectedDestinationId
     : null;
   const normalizedRequest = normalizeDownloadRequest(rawUrl.trim(), authPayload);
   const normalizedUrl = normalizedRequest.url;
   const authState = createDownloadAuthState(normalizedRequest);
-  const target = resolveDownloadTarget(downloadTagSettings, selectedTagId, downloadsDir);
+  const target = resolveDownloadDestinationTarget(
+    downloadDestinationSettings,
+    normalizedSelectedDestinationId,
+    downloadsDir
+  );
 
   ensureDirectory(target.directoryPath);
 
@@ -738,7 +771,8 @@ async function startDownload(rawUrl, options: unknown = {}) {
     authState,
     filename,
     savePath: path.join(target.directoryPath, filename),
-    tagId: target.tagId,
+    destinationId: target.destinationId,
+    tagId: target.destinationId,
     totalBytes,
     downloadedBytes: 0,
     status: STATUS.DOWNLOADING,
@@ -750,9 +784,9 @@ async function startDownload(rawUrl, options: unknown = {}) {
   };
 
   downloads.unshift(record);
-  downloadTagSettings = setLastSelectedTag(downloadTagSettings, target.tagId);
+  downloadDestinationSettings = setLastSelectedDestination(downloadDestinationSettings, target.destinationId);
   persistDownloads();
-  persistDownloadTagSettings();
+  persistDownloadDestinationSettings();
   notifyDownloadsChanged();
 
   runDownload(record.id);
@@ -870,22 +904,34 @@ async function openFolder(downloadId) {
   }
 }
 
+function getDownloadDestinationSettings() { return publicDownloadDestinationSettings(); }
 function getDownloadTagSettings() { return publicDownloadTagSettings(); }
-function saveDownloadTag(input) {
-  downloadTagSettings = upsertDownloadTag(downloadTagSettings, input);
-  persistDownloadTagSettings();
+function saveDownloadDestination(input) {
+  downloadDestinationSettings = upsertDownloadDestination(downloadDestinationSettings, input);
+  persistDownloadDestinationSettings();
   notifyDownloadsChanged();
+  return publicDownloadDestinationSettings();
+}
+function saveDownloadTag(input) {
+  saveDownloadDestination(input);
   return publicDownloadTagSettings();
 }
-function removeDownloadTag(tagId) {
-  const normalizedTagId = typeof tagId === 'string' ? tagId.trim() : '';
-  downloadTagSettings = deleteDownloadTag(downloadTagSettings, tagId);
+function removeDownloadDestination(destinationId) {
+  const normalizedDestinationId = typeof destinationId === 'string' ? destinationId.trim() : '';
+  downloadDestinationSettings = deleteDownloadDestination(downloadDestinationSettings, destinationId);
   for (const download of downloads) {
-    if (download.tagId === normalizedTagId) download.tagId = null;
+    if (download.destinationId === normalizedDestinationId || download.tagId === normalizedDestinationId) {
+      download.destinationId = null;
+      download.tagId = null;
+    }
   }
   persistDownloads();
-  persistDownloadTagSettings();
+  persistDownloadDestinationSettings();
   notifyDownloadsChanged();
+  return publicDownloadDestinationSettings();
+}
+function removeDownloadTag(tagId) {
+  removeDownloadDestination(tagId);
   return publicDownloadTagSettings();
 }
 async function pickDownloadDirectory() {
@@ -1063,11 +1109,16 @@ async function initializeStore() {
 
   store = new Store({ name: 'downloads' });
   downloads = store.get('downloads', []);
-  downloadTagSettings = normalizeDownloadTagSettings(store.get(DOWNLOAD_TAG_SETTINGS_KEY, null));
+  const persistedDestinationSettings = store.get(DOWNLOAD_DESTINATION_SETTINGS_KEY, null);
+  if (persistedDestinationSettings) {
+    downloadDestinationSettings = normalizeDownloadDestinationSettings(persistedDestinationSettings);
+  } else {
+    downloadDestinationSettings = normalizeDownloadDestinationSettings(store.get(DOWNLOAD_TAG_SETTINGS_KEY, null));
+  }
 
   normalizePersistedDownloads();
   persistDownloads();
-  persistDownloadTagSettings();
+  persistDownloadDestinationSettings();
 }
 
 function registerIpcHandlers() {
@@ -1107,6 +1158,14 @@ function registerIpcHandlers() {
   ipcMain.handle('download:open-folder', async (_event, id) => {
     await openFolder(id);
   });
+
+  ipcMain.handle('settings:download-destinations:get', async () => getDownloadDestinationSettings());
+
+  ipcMain.handle('settings:download-destinations:upsert', async (_event, input) => saveDownloadDestination(input));
+
+  ipcMain.handle('settings:download-destinations:delete', async (_event, destinationId) => removeDownloadDestination(destinationId));
+
+  ipcMain.handle('settings:download-destinations:pick-directory', async () => pickDownloadDirectory());
 
   ipcMain.handle('settings:download-tags:get', async () => getDownloadTagSettings());
 

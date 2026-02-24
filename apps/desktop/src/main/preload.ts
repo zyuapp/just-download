@@ -2,6 +2,8 @@ import { contextBridge, ipcRenderer } from 'electron';
 
 import type {
   DraftDownloadRequest,
+  DownloadDestinationInput,
+  DownloadDestinationSettings,
   DownloadRecord,
   DownloadTagInput,
   DownloadTagSettings,
@@ -19,10 +21,13 @@ const electronAPI: ElectronAPI = {
   openFile: (id) => ipcRenderer.invoke('download:open', id),
   openFolder: (id) => ipcRenderer.invoke('download:open-folder', id),
   getDownloads: () => ipcRenderer.invoke('downloads:get'),
+  getDownloadDestinationSettings: (): Promise<DownloadDestinationSettings> => ipcRenderer.invoke('settings:download-destinations:get'),
+  upsertDownloadDestination: (input: DownloadDestinationInput): Promise<DownloadDestinationSettings> => ipcRenderer.invoke('settings:download-destinations:upsert', input),
+  deleteDownloadDestination: (destinationId: string): Promise<DownloadDestinationSettings> => ipcRenderer.invoke('settings:download-destinations:delete', destinationId),
   getDownloadTagSettings: (): Promise<DownloadTagSettings> => ipcRenderer.invoke('settings:download-tags:get'),
   upsertDownloadTag: (input: DownloadTagInput): Promise<DownloadTagSettings> => ipcRenderer.invoke('settings:download-tags:upsert', input),
   deleteDownloadTag: (tagId: string): Promise<DownloadTagSettings> => ipcRenderer.invoke('settings:download-tags:delete', tagId),
-  pickDownloadDirectory: (): Promise<string | null> => ipcRenderer.invoke('settings:download-tags:pick-directory'),
+  pickDownloadDirectory: (): Promise<string | null> => ipcRenderer.invoke('settings:download-destinations:pick-directory'),
   onDraftRequested: (callback) => {
     const listener = (_event: Electron.IpcRendererEvent, payload: DraftDownloadRequest) => {
       callback(payload);
