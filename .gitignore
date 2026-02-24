@@ -7,3 +7,4 @@ Thumbs.db
 apps/desktop/build/
 apps/desktop/release/
 apps/chrome-extension/dist/
+.codex/environments/environment.toml
