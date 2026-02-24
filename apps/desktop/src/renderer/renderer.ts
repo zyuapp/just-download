@@ -1,9 +1,15 @@
 import { reconcileDownloadItems } from './download-list-reconciler.js';
+import { findTagName, getTagOptions, resolveSelectedTagId } from './download-tags.js';
+
+import type { DownloadTagSettings } from '../shared/types';
 
 type Theme = 'dark' | 'light';
 
 interface RendererState {
   downloads: DownloadRecord[];
+  downloadTagSettings: DownloadTagSettings;
+  selectedTagId: string | null;
+  editingTagId: string | null;
   downloadSpeeds: Map<string, DownloadSpeedState>;
   downloadItems: Map<string, HTMLElement>;
   contextTargetId: string | null;
@@ -19,11 +25,29 @@ interface DownloadSpeedState {
   lastStatus: DownloadRecord['status'];
 }
 
+interface DownloadTagBadge {
+  name: string | null;
+  markup: string;
+}
+
 interface ElementsState {
   addButton: HTMLButtonElement | null;
+  settingsToggleButton: HTMLButtonElement | null;
+  settingsPanel: HTMLElement | null;
+  settingsPanelBackdrop: HTMLElement | null;
+  settingsCloseButton: HTMLButtonElement | null;
+  tagList: HTMLElement | null;
+  tagForm: HTMLFormElement | null;
+  tagIdInput: HTMLInputElement | null;
+  tagNameInput: HTMLInputElement | null;
+  tagPathInput: HTMLInputElement | null;
+  tagBrowseButton: HTMLButtonElement | null;
+  tagSaveButton: HTMLButtonElement | null;
+  tagResetButton: HTMLButtonElement | null;
   urlDialog: HTMLElement | null;
   urlDialogBackdrop: HTMLElement | null;
   urlInput: HTMLInputElement | null;
+  tagSelect: HTMLSelectElement | null;
   startButton: HTMLButtonElement | null;
   cancelButton: HTMLButtonElement | null;
   downloadList: HTMLElement | null;
@@ -34,6 +58,12 @@ interface ElementsState {
 
 const state: RendererState = {
   downloads: [],
+  downloadTagSettings: {
+    tags: [],
+    lastSelectedTagId: null
+  },
+  selectedTagId: null,
+  editingTagId: null,
   downloadSpeeds: new Map(),
   downloadItems: new Map(),
   contextTargetId: null,
@@ -44,9 +74,22 @@ const state: RendererState = {
 
 const elements: ElementsState = {
   addButton: null,
+  settingsToggleButton: null,
+  settingsPanel: null,
+  settingsPanelBackdrop: null,
+  settingsCloseButton: null,
+  tagList: null,
+  tagForm: null,
+  tagIdInput: null,
+  tagNameInput: null,
+  tagPathInput: null,
+  tagBrowseButton: null,
+  tagSaveButton: null,
+  tagResetButton: null,
   urlDialog: null,
   urlDialogBackdrop: null,
   urlInput: null,
+  tagSelect: null,
   startButton: null,
   cancelButton: null,
   downloadList: null,
@@ -327,6 +370,34 @@ function getActionsMarkup(download: DownloadRecord): string {
   `;
 }
 
+function getDownloadErrorMarkup(download: DownloadRecord): string {
+  if (download.status !== 'error' || !download.error) {
+    return '';
+  }
+
+  return `
+    <div class="download-error" role="alert" aria-live="polite">
+      <div class="download-error-label">Download failed</div>
+      <p class="download-error-message">${escapeHtml(download.error)}</p>
+    </div>
+  `;
+}
+
+function getDownloadTagBadge(download: DownloadRecord): DownloadTagBadge {
+  const name = findTagName(state.downloadTagSettings, download.tagId || null);
+  if (!name) {
+    return {
+      name: null,
+      markup: ''
+    };
+  }
+
+  return {
+    name,
+    markup: `<div data-role="tag-badge" class="download-tag-badge" title="${escapeHtml(name)}">${escapeHtml(name)}</div>`
+  };
+}
+
 function getDownloadRecord(downloadId: string): DownloadRecord | undefined {
   return state.downloads.find((entry) => entry.id === downloadId);
 }
@@ -365,14 +436,20 @@ function updateDownloadingItemContent(
   progress: number,
   progressLabel: string,
   speedLabel: string,
-  statusValue: string
+  statusValue: string,
+  tagName: string | null
 ): boolean {
   const filenameElement = item.querySelector<HTMLElement>('[data-role="filename"]');
   const statusChipElement = item.querySelector<HTMLElement>('[data-role="status-chip"]');
   const progressFillElement = item.querySelector<HTMLElement>('[data-role="progress-fill"]');
   const progressTextElement = item.querySelector<HTMLElement>('[data-role="progress-text"]');
+  const tagBadgeElement = item.querySelector<HTMLElement>('[data-role="tag-badge"]');
 
   if (!filenameElement || !statusChipElement || !progressFillElement || !progressTextElement) {
+    return false;
+  }
+
+  if (tagName && !tagBadgeElement) {
     return false;
   }
 
@@ -387,6 +464,13 @@ function updateDownloadingItemContent(
 
   progressTextElement.textContent = `${progressLabel}${speedLabel}`;
 
+  if (tagName && tagBadgeElement) {
+    tagBadgeElement.textContent = tagName;
+    tagBadgeElement.setAttribute('title', tagName);
+  } else if (!tagName && tagBadgeElement) {
+    tagBadgeElement.remove();
+  }
+
   return true;
 }
 
@@ -399,14 +483,8 @@ function updateDownloadItem(item: HTMLElement, download: DownloadRecord): void {
   const speedLabel = download.status === 'downloading'
     ? ` | ${formatSpeed(getDownloadSpeed(download))}`
     : '';
-  const errorText = download.status === 'error' && download.error
-    ? `
-      <div class="download-error" role="alert" aria-live="polite">
-        <div class="download-error-label">Download failed</div>
-        <p class="download-error-message">${escapeHtml(download.error)}</p>
-      </div>
-    `
-    : '';
+  const errorText = getDownloadErrorMarkup(download);
+  const tagBadge = getDownloadTagBadge(download);
 
   item.dataset.status = statusValue;
   if (download.status === 'completed') {
@@ -417,7 +495,7 @@ function updateDownloadItem(item: HTMLElement, download: DownloadRecord): void {
 
   if (previousStatus === 'downloading' && statusValue === 'downloading') {
     item.dataset.status = statusValue;
-    if (updateDownloadingItemContent(item, download, progress, progressLabel, speedLabel, statusValue)) {
+    if (updateDownloadingItemContent(item, download, progress, progressLabel, speedLabel, statusValue, tagBadge.name)) {
       return;
     }
   }
@@ -433,6 +511,7 @@ function updateDownloadItem(item: HTMLElement, download: DownloadRecord): void {
       </div>
       <div data-role="progress-text" class="${PROGRESS_TEXT_CLASS}">${progressLabel}${speedLabel}</div>
     </div>
+    ${tagBadge.markup}
     ${errorText}
     ${getActionsMarkup(download)}
   `;
@@ -523,14 +602,230 @@ function renderDownloads(): void {
   });
 }
 
+function readDownloadTagSettings(settings: unknown): DownloadTagSettings {
+  if (!settings || typeof settings !== 'object') {
+    return {
+      tags: [],
+      lastSelectedTagId: null
+    };
+  }
+
+  const value = settings as DownloadTagSettings;
+  return {
+    tags: Array.isArray(value.tags) ? value.tags : [],
+    lastSelectedTagId: typeof value.lastSelectedTagId === 'string' ? value.lastSelectedTagId : null
+  };
+}
+
+function isSettingsPanelOpen(): boolean {
+  return Boolean(elements.settingsPanel && !elements.settingsPanel.classList.contains('hidden'));
+}
+
+function showSettingsPanel(): void {
+  if (!elements.settingsPanel) {
+    return;
+  }
+
+  elements.settingsPanel.classList.remove('hidden');
+  elements.settingsPanel.setAttribute('aria-hidden', 'false');
+  elements.settingsPanel.dataset.open = 'true';
+}
+
+function hideSettingsPanel(): void {
+  if (!elements.settingsPanel) {
+    return;
+  }
+
+  elements.settingsPanel.dataset.open = 'false';
+  elements.settingsPanel.setAttribute('aria-hidden', 'true');
+
+  window.setTimeout(() => {
+    if (!elements.settingsPanel || elements.settingsPanel.dataset.open === 'true') {
+      return;
+    }
+
+    elements.settingsPanel.classList.add('hidden');
+  }, 180);
+}
+
+function clearTagForm(): void {
+  state.editingTagId = null;
+
+  if (elements.tagIdInput) {
+    elements.tagIdInput.value = '';
+  }
+
+  if (elements.tagNameInput) {
+    elements.tagNameInput.value = '';
+  }
+
+  if (elements.tagPathInput) {
+    elements.tagPathInput.value = '';
+  }
+
+  if (elements.tagSaveButton) {
+    elements.tagSaveButton.textContent = 'Save Tag';
+  }
+}
+
+function renderTagList(): void {
+  if (!elements.tagList) {
+    return;
+  }
+
+  if (state.downloadTagSettings.tags.length === 0) {
+    elements.tagList.innerHTML = '<div class="text-[12px] text-[var(--text-faint)]">No tags yet. Add one below.</div>';
+    return;
+  }
+
+  elements.tagList.innerHTML = state.downloadTagSettings.tags.map((tag) => `
+    <article class="tag-entry" data-tag-id="${escapeHtml(tag.id)}">
+      <div class="tag-entry-name">${escapeHtml(tag.name)}</div>
+      <div class="tag-entry-path" title="${escapeHtml(tag.directoryPath)}">${escapeHtml(tag.directoryPath)}</div>
+      <div class="tag-entry-actions">
+        <button type="button" class="tag-entry-btn" data-action="edit" data-tag-id="${escapeHtml(tag.id)}">Edit</button>
+        <button type="button" class="tag-entry-btn" data-action="delete" data-tag-id="${escapeHtml(tag.id)}">Delete</button>
+      </div>
+    </article>
+  `).join('');
+}
+
+function renderTagSelectOptions(): void {
+  if (!elements.tagSelect) {
+    return;
+  }
+
+  const selectedTagId = resolveSelectedTagId(state.downloadTagSettings, state.selectedTagId);
+  state.selectedTagId = selectedTagId;
+
+  const options = getTagOptions(state.downloadTagSettings)
+    .map((option) => `<option value="${escapeHtml(option.id)}">${escapeHtml(option.label)}</option>`)
+    .join('');
+
+  elements.tagSelect.innerHTML = `<option value="">System Downloads (default)</option>${options}`;
+  elements.tagSelect.value = selectedTagId || '';
+}
+
+function applyDownloadTagSettings(settings: unknown): void {
+  state.downloadTagSettings = readDownloadTagSettings(settings);
+  state.selectedTagId = resolveSelectedTagId(state.downloadTagSettings, state.selectedTagId);
+
+  if (
+    state.editingTagId
+    && !state.downloadTagSettings.tags.some((tag) => tag.id === state.editingTagId)
+  ) {
+    clearTagForm();
+  }
+
+  renderTagList();
+  renderTagSelectOptions();
+  renderDownloads();
+}
+
+function editDownloadTag(tagId: string): void {
+  if (!elements.tagIdInput || !elements.tagNameInput || !elements.tagPathInput || !elements.tagSaveButton) {
+    return;
+  }
+
+  const tag = state.downloadTagSettings.tags.find((entry) => entry.id === tagId);
+  if (!tag) {
+    return;
+  }
+
+  state.editingTagId = tag.id;
+  elements.tagIdInput.value = tag.id;
+  elements.tagNameInput.value = tag.name;
+  elements.tagPathInput.value = tag.directoryPath;
+  elements.tagSaveButton.textContent = 'Update Tag';
+  elements.tagNameInput.focus();
+  elements.tagNameInput.select();
+}
+
+async function refreshDownloadTagSettings(): Promise<void> {
+  try {
+    const settings = await getAPI().getDownloadTagSettings();
+    applyDownloadTagSettings(settings);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unable to load tag settings.';
+    window.alert(message);
+  }
+}
+
+async function submitTagForm(): Promise<void> {
+  if (!elements.tagNameInput || !elements.tagPathInput || !elements.tagSaveButton) {
+    return;
+  }
+
+  const name = elements.tagNameInput.value.trim();
+  const directoryPath = elements.tagPathInput.value.trim();
+  if (!name || !directoryPath) {
+    window.alert('Please provide both tag name and directory.');
+    return;
+  }
+
+  try {
+    elements.tagSaveButton.disabled = true;
+
+    const settings = await getAPI().upsertDownloadTag({
+      id: state.editingTagId,
+      name,
+      directoryPath
+    });
+
+    applyDownloadTagSettings(settings);
+    clearTagForm();
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unable to save tag.';
+    window.alert(message);
+  } finally {
+    elements.tagSaveButton.disabled = false;
+  }
+}
+
+async function deleteTag(tagId: string): Promise<void> {
+  if (!window.confirm('Delete this download tag? Existing downloads will no longer show the badge.')) {
+    return;
+  }
+
+  try {
+    const settings = await getAPI().deleteDownloadTag(tagId);
+    applyDownloadTagSettings(settings);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unable to delete tag.';
+    window.alert(message);
+  }
+}
+
+async function browseDownloadDirectory(): Promise<void> {
+  if (!elements.tagPathInput) {
+    return;
+  }
+
+  try {
+    const selectedPath = await getAPI().pickDownloadDirectory();
+    if (!selectedPath) {
+      return;
+    }
+
+    elements.tagPathInput.value = selectedPath;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unable to open directory picker.';
+    window.alert(message);
+  }
+}
+
 function showUrlDialog(prefilledUrl = ''): void {
-  if (!elements.urlDialog || !elements.urlInput) {
+  if (!elements.urlDialog || !elements.urlInput || !elements.tagSelect) {
     return;
   }
 
   if (typeof prefilledUrl === 'string' && prefilledUrl.trim()) {
     elements.urlInput.value = prefilledUrl.trim();
   }
+
+  const selectedTagId = resolveSelectedTagId(state.downloadTagSettings, state.selectedTagId);
+  state.selectedTagId = selectedTagId;
+  elements.tagSelect.value = selectedTagId || '';
 
   elements.urlDialog.classList.remove('hidden');
   elements.urlDialog.setAttribute('aria-hidden', 'false');
@@ -543,18 +838,19 @@ function isUrlDialogOpen(): boolean {
 }
 
 function hideUrlDialog(): void {
-  if (!elements.urlDialog || !elements.urlInput) {
+  if (!elements.urlDialog || !elements.urlInput || !elements.tagSelect) {
     return;
   }
 
   elements.urlDialog.classList.add('hidden');
   elements.urlDialog.setAttribute('aria-hidden', 'true');
   elements.urlInput.value = '';
+  elements.tagSelect.value = state.selectedTagId || '';
   elements.addButton?.focus();
 }
 
 async function startDownloadFromInput(): Promise<void> {
-  if (!elements.urlInput || !elements.startButton) {
+  if (!elements.urlInput || !elements.startButton || !elements.tagSelect) {
     return;
   }
 
@@ -563,10 +859,14 @@ async function startDownloadFromInput(): Promise<void> {
     return;
   }
 
+  const selectedTagId = elements.tagSelect.value.trim() || null;
+
   try {
     elements.startButton.disabled = true;
-    await getAPI().startDownload(value);
+    await getAPI().startDownload(value, { tagId: selectedTagId });
+    state.selectedTagId = selectedTagId;
     hideUrlDialog();
+    void refreshDownloadTagSettings();
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unable to start download.';
     window.alert(message);
@@ -628,66 +928,138 @@ async function refreshDownloads(): Promise<void> {
   renderDownloads();
 }
 
-function bindEvents(): void {
-  if (
-    !elements.addButton
-    || !elements.urlDialog
-    || !elements.urlDialogBackdrop
-    || !elements.cancelButton
-    || !elements.startButton
-    || !elements.themeToggle
-    || !elements.urlInput
-    || !elements.contextMenu
-  ) {
-    return;
-  }
+function hasRequiredElements(): boolean {
+  const required = [
+    elements.addButton,
+    elements.settingsToggleButton,
+    elements.settingsPanel,
+    elements.settingsPanelBackdrop,
+    elements.settingsCloseButton,
+    elements.tagList,
+    elements.tagForm,
+    elements.tagNameInput,
+    elements.tagPathInput,
+    elements.tagBrowseButton,
+    elements.tagResetButton,
+    elements.urlDialog,
+    elements.urlDialogBackdrop,
+    elements.cancelButton,
+    elements.startButton,
+    elements.tagSelect,
+    elements.themeToggle,
+    elements.urlInput,
+    elements.contextMenu
+  ];
 
-  elements.addButton.addEventListener('click', () => {
+  return required.every(Boolean);
+}
+
+function bindPrimaryControls(): void {
+  elements.addButton?.addEventListener('click', () => {
     showUrlDialog();
   });
-  elements.urlDialogBackdrop.addEventListener('click', hideUrlDialog);
-  elements.cancelButton.addEventListener('click', hideUrlDialog);
-  elements.startButton.addEventListener('click', () => {
+  elements.settingsToggleButton?.addEventListener('click', showSettingsPanel);
+  elements.settingsPanelBackdrop?.addEventListener('click', hideSettingsPanel);
+  elements.settingsCloseButton?.addEventListener('click', hideSettingsPanel);
+  elements.urlDialogBackdrop?.addEventListener('click', hideUrlDialog);
+  elements.cancelButton?.addEventListener('click', hideUrlDialog);
+  elements.startButton?.addEventListener('click', () => {
     void startDownloadFromInput();
   });
-  elements.themeToggle.addEventListener('click', toggleTheme);
+  elements.themeToggle?.addEventListener('click', toggleTheme);
 
-  elements.urlInput.addEventListener('keydown', (event: KeyboardEvent) => {
+  elements.urlInput?.addEventListener('keydown', (event: KeyboardEvent) => {
     if (event.key === 'Enter') {
       void startDownloadFromInput();
-    } else if (event.key === 'Escape') {
-      event.preventDefault();
-      event.stopPropagation();
-      hideUrlDialog();
+      return;
     }
-  });
 
-  document.addEventListener('keydown', (event: KeyboardEvent) => {
-    if (event.key !== 'Escape' || !isUrlDialogOpen()) {
+    if (event.key !== 'Escape') {
       return;
     }
 
     event.preventDefault();
+    event.stopPropagation();
     hideUrlDialog();
   });
 
+  elements.tagSelect?.addEventListener('change', () => {
+    state.selectedTagId = elements.tagSelect?.value.trim() || null;
+  });
+}
+
+function bindTagSettingsEvents(): void {
+  elements.tagBrowseButton?.addEventListener('click', () => {
+    void browseDownloadDirectory();
+  });
+
+  elements.tagResetButton?.addEventListener('click', () => {
+    clearTagForm();
+  });
+
+  elements.tagForm?.addEventListener('submit', (event: SubmitEvent) => {
+    event.preventDefault();
+    void submitTagForm();
+  });
+
+  elements.tagList?.addEventListener('click', (event: MouseEvent) => {
+    const target = event.target;
+    if (!(target instanceof Element)) {
+      return;
+    }
+
+    const actionElement = target.closest<HTMLElement>('[data-action][data-tag-id]');
+    const action = actionElement?.dataset.action;
+    const tagId = actionElement?.dataset.tagId;
+    if (!action || !tagId) {
+      return;
+    }
+
+    if (action === 'edit') {
+      editDownloadTag(tagId);
+      return;
+    }
+
+    if (action === 'delete') {
+      void deleteTag(tagId);
+    }
+  });
+}
+
+function bindEscapeHandler(): void {
+  document.addEventListener('keydown', (event: KeyboardEvent) => {
+    if (event.key !== 'Escape') {
+      return;
+    }
+
+    if (isUrlDialogOpen()) {
+      event.preventDefault();
+      hideUrlDialog();
+      return;
+    }
+
+    if (!isSettingsPanelOpen()) {
+      return;
+    }
+
+    event.preventDefault();
+    hideSettingsPanel();
+  });
+}
+
+function bindContextMenuEvents(): void {
   document.addEventListener('click', (event: MouseEvent) => {
     if (!elements.contextMenu) {
       return;
     }
 
     const target = event.target;
-    if (!(target instanceof Node)) {
-      hideContextMenu();
-      return;
-    }
-
-    if (!elements.contextMenu.contains(target)) {
+    if (!(target instanceof Node) || !elements.contextMenu.contains(target)) {
       hideContextMenu();
     }
   });
 
-  elements.contextMenu.addEventListener('click', async (event: MouseEvent) => {
+  elements.contextMenu?.addEventListener('click', async (event: MouseEvent) => {
     const target = event.target;
     if (!(target instanceof Element)) {
       return;
@@ -710,11 +1082,35 @@ function bindEvents(): void {
   });
 }
 
+function bindEvents(): void {
+  if (!hasRequiredElements()) {
+    return;
+  }
+
+  bindPrimaryControls();
+  bindTagSettingsEvents();
+  bindEscapeHandler();
+  bindContextMenuEvents();
+}
+
 function cacheElements(): void {
   elements.addButton = document.getElementById('add-btn') as HTMLButtonElement | null;
+  elements.settingsToggleButton = document.getElementById('settings-toggle') as HTMLButtonElement | null;
+  elements.settingsPanel = document.getElementById('settings-panel');
+  elements.settingsPanelBackdrop = document.getElementById('settings-panel-backdrop');
+  elements.settingsCloseButton = document.getElementById('settings-close') as HTMLButtonElement | null;
+  elements.tagList = document.getElementById('tag-list');
+  elements.tagForm = document.getElementById('tag-form') as HTMLFormElement | null;
+  elements.tagIdInput = document.getElementById('tag-id') as HTMLInputElement | null;
+  elements.tagNameInput = document.getElementById('tag-name') as HTMLInputElement | null;
+  elements.tagPathInput = document.getElementById('tag-path') as HTMLInputElement | null;
+  elements.tagBrowseButton = document.getElementById('tag-browse') as HTMLButtonElement | null;
+  elements.tagSaveButton = document.getElementById('tag-save') as HTMLButtonElement | null;
+  elements.tagResetButton = document.getElementById('tag-reset') as HTMLButtonElement | null;
   elements.urlDialog = document.getElementById('url-dialog');
   elements.urlDialogBackdrop = document.getElementById('url-dialog-backdrop');
   elements.urlInput = document.getElementById('url-input') as HTMLInputElement | null;
+  elements.tagSelect = document.getElementById('download-tag') as HTMLSelectElement | null;
   elements.startButton = document.getElementById('start-download') as HTMLButtonElement | null;
   elements.cancelButton = document.getElementById('cancel-dialog') as HTMLButtonElement | null;
   elements.downloadList = document.getElementById('download-list');
@@ -739,6 +1135,7 @@ async function initialize(): Promise<void> {
   }
 
   bindEvents();
+  clearTagForm();
 
   state.unsubscribeDrafts = getAPI().onDraftRequested((draft) => {
     if (!draft || typeof draft.url !== 'string') {
@@ -761,6 +1158,7 @@ async function initialize(): Promise<void> {
     renderDownloads();
   });
 
+  await refreshDownloadTagSettings();
   await refreshDownloads();
 }
 

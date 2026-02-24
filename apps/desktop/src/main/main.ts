@@ -13,38 +13,15 @@ const {
   shell,
   dialog
 } = require('electron');
-const {
-  sanitizeFilename,
-  filenameFromUrl
-} = require('./download/url-utils');
-const {
-  createDownloadAuthState
-} = require('./download/auth');
-const {
-  normalizeDownloadRequest
-} = require('./download/request-normalization');
-const {
-  formatDownloadError
-} = require('./download/errors');
-const {
-  runDownloadWithDependencies
-} = require('./download/coordinator');
-const {
-  fetchMetadata
-} = require('./download/http-client');
-const {
-  downloadPartWithHelpers
-} = require('./download/part-downloader');
-const {
-  createBridgeRequestHandler
-} = require('./bridge/server');
-const {
-  deleteDownloadTag,
-  normalizeDownloadTagSettings,
-  resolveDownloadTarget,
-  setLastSelectedTag,
-  upsertDownloadTag
-} = require('./settings/download-tags');
+const { sanitizeFilename, filenameFromUrl } = require('./download/url-utils');
+const { createDownloadAuthState } = require('./download/auth');
+const { normalizeDownloadRequest } = require('./download/request-normalization');
+const { formatDownloadError } = require('./download/errors');
+const { runDownloadWithDependencies } = require('./download/coordinator');
+const { fetchMetadata } = require('./download/http-client');
+const { downloadPartWithHelpers } = require('./download/part-downloader');
+const { createBridgeRequestHandler } = require('./bridge/server');
+const { deleteDownloadTag, normalizeDownloadTagSettings, resolveDownloadTarget, setLastSelectedTag, upsertDownloadTag } = require('./settings/download-tags');
 
 const PART_COUNT = 4;
 const PROGRESS_SYNC_INTERVAL_MS = 250;
@@ -586,6 +563,22 @@ function normalizePersistedStatus(status) {
   return status;
 }
 
+function normalizePersistedSavePath(item, filename) {
+  if (typeof item.savePath === 'string' && item.savePath) {
+    return item.savePath;
+  }
+
+  return path.join(downloadsDir, filename);
+}
+
+function normalizePersistedTagId(item) {
+  return typeof item.tagId === 'string' && item.tagId ? item.tagId : null;
+}
+
+function hasPersistedRangeSupport(item) {
+  return Boolean(item.supportsRanges || (Array.isArray(item.parts) && item.parts.length > 1));
+}
+
 function normalizePersistedDownload(item) {
   if (!isPersistedDownloadCandidate(item)) {
     return null;
@@ -599,15 +592,13 @@ function normalizePersistedDownload(item) {
     id,
     url: item.url,
     filename,
-    savePath: typeof item.savePath === 'string' && item.savePath
-      ? item.savePath
-      : path.join(downloadsDir, filename),
-    tagId: typeof item.tagId === 'string' && item.tagId ? item.tagId : null,
+    savePath: normalizePersistedSavePath(item, filename),
+    tagId: normalizePersistedTagId(item),
     totalBytes: Number.isFinite(item.totalBytes) ? item.totalBytes : 0,
     downloadedBytes: sumDownloadedBytes(parts),
     status: normalizePersistedStatus(item.status),
     error: item.error ? formatDownloadError({ message: item.error }) : null,
-    supportsRanges: Boolean(item.supportsRanges || (Array.isArray(item.parts) && item.parts.length > 1)),
+    supportsRanges: hasPersistedRangeSupport(item),
     parts,
     createdAt: Number.isFinite(item.createdAt) ? item.createdAt : Date.now(),
     completedAt: Number.isFinite(item.completedAt) ? item.completedAt : null
@@ -879,46 +870,30 @@ async function openFolder(downloadId) {
   }
 }
 
-function getDownloadTagSettings() {
-  return publicDownloadTagSettings();
-}
-
+function getDownloadTagSettings() { return publicDownloadTagSettings(); }
 function saveDownloadTag(input) {
   downloadTagSettings = upsertDownloadTag(downloadTagSettings, input);
   persistDownloadTagSettings();
   notifyDownloadsChanged();
   return publicDownloadTagSettings();
 }
-
 function removeDownloadTag(tagId) {
   const normalizedTagId = typeof tagId === 'string' ? tagId.trim() : '';
   downloadTagSettings = deleteDownloadTag(downloadTagSettings, tagId);
-
   for (const download of downloads) {
-    if (download.tagId === normalizedTagId) {
-      download.tagId = null;
-    }
+    if (download.tagId === normalizedTagId) download.tagId = null;
   }
-
   persistDownloads();
   persistDownloadTagSettings();
   notifyDownloadsChanged();
-
   return publicDownloadTagSettings();
 }
-
 async function pickDownloadDirectory() {
   const owner = mainWindow && !mainWindow.isDestroyed() ? mainWindow : undefined;
-  const result = await dialog.showOpenDialog(owner, {
-    title: 'Choose Download Directory',
-    properties: ['openDirectory', 'createDirectory']
-  });
-
-  if (result.canceled || !Array.isArray(result.filePaths) || result.filePaths.length === 0) {
-    return null;
-  }
-
-  return result.filePaths[0] || null;
+  const result = await dialog.showOpenDialog(owner, { title: 'Choose Download Directory', properties: ['openDirectory', 'createDirectory'] });
+  return result.canceled || !Array.isArray(result.filePaths) || result.filePaths.length === 0
+    ? null
+    : (result.filePaths[0] || null);
 }
 
 function startBridgeServer() {

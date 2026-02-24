@@ -188,6 +188,92 @@
     margin-bottom: 9px;
   }
 
+  .settings-drawer {
+    transform: translateX(100%);
+    transition: transform var(--duration-normal) ease;
+  }
+
+  #settings-panel[data-open='true'] {
+    pointer-events: auto;
+  }
+
+  #settings-panel[data-open='true'] .settings-drawer {
+    transform: translateX(0);
+  }
+
+  .tag-entry {
+    display: grid;
+    gap: 4px;
+    margin-bottom: 8px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    background: var(--surface-soft);
+    padding: 8px;
+  }
+
+  .tag-entry:last-child {
+    margin-bottom: 0;
+  }
+
+  .tag-entry-name {
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--text-title);
+  }
+
+  .tag-entry-path {
+    font-size: 11px;
+    line-height: 1.35;
+    color: var(--text-faint);
+    word-break: break-word;
+    overflow-wrap: anywhere;
+  }
+
+  .tag-entry-actions {
+    display: flex;
+    gap: 6px;
+    margin-top: 4px;
+  }
+
+  .tag-entry-btn {
+    min-height: 28px;
+    border-radius: 7px;
+    border: 1px solid var(--border);
+    background: var(--surface);
+    color: var(--text-main);
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    padding: 0 10px;
+    transition: transform var(--duration-fast) ease, border-color var(--duration-fast) ease;
+  }
+
+  .tag-entry-btn:hover {
+    transform: translateY(-1px);
+    border-color: var(--border-strong);
+  }
+
+  .tag-entry-btn[data-action='delete'] {
+    color: color-mix(in srgb, var(--error) 90%, var(--text-main));
+  }
+
+  .download-tag-badge {
+    display: inline-flex;
+    align-items: center;
+    margin-top: 6px;
+    border-radius: 999px;
+    border: 1px solid color-mix(in srgb, var(--accent) 48%, transparent);
+    background: color-mix(in srgb, var(--accent) 16%, transparent);
+    color: color-mix(in srgb, var(--accent) 86%, #f2fffb);
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    padding: 4px 8px;
+    max-width: 100%;
+  }
+
   .download-item:last-child {
     margin-bottom: 0;
   }
