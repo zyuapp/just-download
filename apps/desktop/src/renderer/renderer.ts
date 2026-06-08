@@ -119,7 +119,7 @@ const THEME_STORAGE_KEY = 'just-download:theme';
 const DEFAULT_THEME: Theme = THEME_DARK;
 const SPEED_SMOOTHING_FACTOR = 0.35;
 
-const DOWNLOAD_ITEM_BASE_CLASS = 'download-item rounded-[12px] border border-[var(--border)] bg-[var(--surface-strong)] p-[13px] shadow-[var(--shadow-card)] transition-[transform,border-color,background-color] duration-150 ease-out hover:-translate-y-px hover:border-[var(--border-strong)] hover:bg-[var(--surface-hover)]';
+const DOWNLOAD_ITEM_BASE_CLASS = 'download-item rounded-[12px] border border-[var(--border)] bg-[var(--surface-strong)] p-[13px] shadow-[var(--shadow-card)] transition-[border-color,background-color] duration-150 ease-out hover:border-[var(--border-strong)] hover:bg-[var(--surface-hover)]';
 const DOWNLOAD_INFO_CLASS = 'mb-[7px] flex items-start justify-between gap-[10px] max-[760px]:flex-col max-[760px]:items-start';
 const FILENAME_CLASS = 'flex-1 break-words text-[14px] font-[620] text-[var(--text-title)]';
 const PROGRESS_TRACK_CLASS = 'h-[9px] overflow-hidden rounded-full border border-[color-mix(in_srgb,var(--border)_76%,transparent)] bg-[var(--progress-track)]';
@@ -373,7 +373,7 @@ function getActionsMarkup(download: DownloadRecord): string {
     `;
 
   return `
-    <div class="mt-[11px] flex gap-2">
+    <div data-role="download-actions" class="mt-[11px] flex gap-2">
       ${pauseOrResume}
       <button class="action-btn" data-action="cancel" title="Cancel">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -414,6 +414,15 @@ function getDownloadTagBadge(download: DownloadRecord): DownloadTagBadge {
     name,
     markup: `<div data-role="tag-badge" class="download-tag-badge" title="${escapeHtml(name)}">${escapeHtml(name)}</div>`
   };
+}
+
+function createDownloadTagBadgeElement(tagName: string): HTMLElement {
+  const badge = document.createElement('div');
+  badge.dataset.role = 'tag-badge';
+  badge.className = 'download-tag-badge';
+  badge.textContent = tagName;
+  badge.setAttribute('title', tagName);
+  return badge;
 }
 
 function getDownloadRecord(downloadId: string): DownloadRecord | undefined {
@@ -462,12 +471,9 @@ function updateDownloadingItemContent(
   const progressFillElement = item.querySelector<HTMLElement>('[data-role="progress-fill"]');
   const progressTextElement = item.querySelector<HTMLElement>('[data-role="progress-text"]');
   const tagBadgeElement = item.querySelector<HTMLElement>('[data-role="tag-badge"]');
+  const actionsElement = item.querySelector<HTMLElement>('[data-role="download-actions"]');
 
   if (!filenameElement || !statusChipElement || !progressFillElement || !progressTextElement) {
-    return false;
-  }
-
-  if (tagName && !tagBadgeElement) {
     return false;
   }
 
@@ -485,6 +491,13 @@ function updateDownloadingItemContent(
   if (tagName && tagBadgeElement) {
     tagBadgeElement.textContent = tagName;
     tagBadgeElement.setAttribute('title', tagName);
+  } else if (tagName) {
+    const nextTagBadgeElement = createDownloadTagBadgeElement(tagName);
+    if (actionsElement) {
+      actionsElement.before(nextTagBadgeElement);
+    } else {
+      item.appendChild(nextTagBadgeElement);
+    }
   } else if (!tagName && tagBadgeElement) {
     tagBadgeElement.remove();
   }
