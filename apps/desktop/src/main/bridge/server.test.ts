@@ -146,3 +146,55 @@ describe('createBridgeRequestHandler', () => {
     expect(queueDraftRequest).toHaveBeenCalledTimes(1);
   });
 });
+
+describe('draft auth requests', () => {
+  it('queues draft auth metadata for later confirmation', async () => {
+    const queueDraftRequest = vi.fn();
+    const handler = createBridgeRequestHandler({
+      host: '127.0.0.1',
+      port: 17839,
+      downloadsPath: '/v1/downloads',
+      healthPath: '/v1/health',
+      maxBodyBytes: 32 * 1024,
+      requestTtlMs: 5 * 60 * 1000,
+      getAppVersion: () => '1.2.3',
+      queueDraftRequest,
+      startDownload: async () => ({ id: 'download-1' })
+    });
+
+    const server = http.createServer((request, response) => {
+      void handler(request, response);
+    });
+    servers.push(server);
+
+    const port = await listen(server);
+    const body = {
+      url: 'https://example.com/file.zip',
+      mode: 'draft',
+      requestId: 'req-auth',
+      source: 'chrome-extension',
+      auth: {
+        type: 'basic',
+        username: 'user',
+        password: 'secret'
+      }
+    };
+
+    const response = await fetch(`http://127.0.0.1:${port}/v1/downloads`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    });
+
+    expect(response.status).toBe(202);
+    expect(queueDraftRequest).toHaveBeenCalledWith('https://example.com/file.zip', {
+      source: 'chrome-extension',
+      requestId: 'req-auth',
+      auth: {
+        type: 'basic',
+        username: 'user',
+        password: 'secret'
+      }
+    });
+  });
+});

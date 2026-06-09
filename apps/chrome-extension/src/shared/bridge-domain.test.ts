@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   extractFilenameHint,
+  extractFilenameHintFromUrl,
   normalizeSettings,
   normalizeStats,
   sanitizeErrorMessage,
@@ -58,5 +59,11 @@ describe('extractFilenameHint', () => {
   it('extracts file name from path-like values', () => {
     expect(extractFilenameHint('/tmp/files/archive.zip')).toBe('archive.zip');
     expect(extractFilenameHint('')).toBeNull();
+  });
+});
+
+describe('extractFilenameHintFromUrl', () => {
+  it('extracts file name from URL paths without query strings', () => {
+    expect(extractFilenameHintFromUrl('https://example.com/files/report%20final.pdf?token=secret')).toBe('report final.pdf');
   });
 });

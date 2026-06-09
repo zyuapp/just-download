@@ -4,6 +4,7 @@
   "description": "Manage Chrome downloads in the Just Download desktop app.",
   "version": "0.1.0",
   "permissions": [
+    "contextMenus",
     "downloads",
     "storage"
   ],

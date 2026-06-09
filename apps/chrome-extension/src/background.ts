@@ -4,6 +4,7 @@ import {
   SETTINGS_KEY,
   STATS_KEY,
   extractFilenameHint,
+  extractFilenameHintFromUrl,
   normalizeSettings,
   normalizeStats,
   sanitizeErrorMessage,
@@ -23,6 +24,16 @@ type HandoffPayload = {
   auth: HandoffAuth | null;
 };
 
+type DraftDownloadRequest = {
+  sourceUrl: string;
+  requestIdSource: number | string;
+  referrer: string | null;
+  filenameHint: string | null;
+};
+
+const CONTEXT_MENU_LINK_DOWNLOAD_ID = 'download-link-with-just-download';
+const CONTEXT_MENU_MEDIA_DOWNLOAD_ID = 'download-media-with-just-download';
+const CONTEXT_MENU_TARGET_PATTERNS = ['http://*/*', 'https://*/*'];
 const DESKTOP_LAUNCH_URL = 'justdownload://open?source=chrome-extension';
 const DESKTOP_STARTUP_TIMEOUT_MS = 45000;
 const DESKTOP_HEALTH_POLL_INTERVAL_MS = 300;
@@ -35,6 +46,32 @@ const activeInterceptions = new Set<number>();
 let lastDesktopLaunchAt = 0;
 
 type StorageItems = Record<string, unknown>;
+
+function createContextMenu() {
+  chrome.contextMenus.create({
+    id: CONTEXT_MENU_LINK_DOWNLOAD_ID,
+    title: 'Download link with Just Download',
+    contexts: ['link'],
+    targetUrlPatterns: CONTEXT_MENU_TARGET_PATTERNS
+  });
+
+  chrome.contextMenus.create({
+    id: CONTEXT_MENU_MEDIA_DOWNLOAD_ID,
+    title: 'Download media with Just Download',
+    contexts: ['image', 'video', 'audio'],
+    targetUrlPatterns: CONTEXT_MENU_TARGET_PATTERNS
+  });
+}
+
+function resetContextMenus() {
+  chrome.contextMenus.removeAll(() => {
+    if (chrome.runtime.lastError) {
+      return;
+    }
+
+    createContextMenu();
+  });
+}
 
 function storageGet(keys: string[]): Promise<StorageItems> {
   return new Promise<StorageItems>((resolve) => {
@@ -58,12 +95,12 @@ function storageSet(values: StorageItems): Promise<void> {
   });
 }
 
-function generateRequestId(downloadId: number) {
+function generateRequestId(sourceId: number | string) {
   const suffix = typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
     ? crypto.randomUUID()
     : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
 
-  return `jd-${downloadId}-${suffix}`;
+  return `jd-${sourceId}-${suffix}`;
 }
 
 function sleep(ms: number) {
@@ -96,6 +133,26 @@ function isHttpDownloadUrl(url: string) {
   } catch {
     return false;
   }
+}
+
+function getContextMenuDownloadUrl(info: chrome.contextMenus.OnClickData) {
+  if (info.menuItemId === CONTEXT_MENU_LINK_DOWNLOAD_ID && typeof info.linkUrl === 'string' && info.linkUrl.trim()) {
+    return info.linkUrl.trim();
+  }
+
+  if (info.menuItemId === CONTEXT_MENU_MEDIA_DOWNLOAD_ID && typeof info.srcUrl === 'string' && info.srcUrl.trim()) {
+    return info.srcUrl.trim();
+  }
+
+  return '';
+}
+
+function getTabReferrer(tab: chrome.tabs.Tab | undefined) {
+  if (!tab || typeof tab.url !== 'string' || !isHttpDownloadUrl(tab.url)) {
+    return null;
+  }
+
+  return tab.url;
 }
 
 
@@ -373,6 +430,29 @@ async function handoffToDesktop(payload) {
   }
 }
 
+async function sendDraftDownloadToDesktop(request: DraftDownloadRequest) {
+  const normalizedRequest = splitAuthFromUrl(request.sourceUrl);
+  const bridgeAvailable = await ensureDesktopBridgeAvailable();
+
+  if (!bridgeAvailable) {
+    throw new Error('Desktop app did not become ready in time.');
+  }
+
+  const accepted = await handoffToDesktop({
+    url: normalizedRequest.url,
+    requestId: generateRequestId(request.requestIdSource),
+    mode: 'draft',
+    source: 'chrome-extension',
+    referrer: request.referrer,
+    filenameHint: request.filenameHint,
+    auth: normalizedRequest.auth
+  });
+
+  if (!accepted) {
+    throw new Error('Desktop app did not accept this download.');
+  }
+}
+
 async function interceptDownload(downloadItem) {
   if (!settingsCache.enabled) {
     return;
@@ -396,32 +476,17 @@ async function interceptDownload(downloadItem) {
     return;
   }
 
-  const normalizedRequest = splitAuthFromUrl(sourceUrl);
-
   activeInterceptions.add(downloadId);
 
   try {
     await pauseDownload(downloadId);
 
-    const bridgeAvailable = await ensureDesktopBridgeAvailable();
-    if (!bridgeAvailable) {
-      throw new Error('Desktop app did not become ready in time.');
-    }
-
-    const requestId = generateRequestId(downloadId);
-    const accepted = await handoffToDesktop({
-      url: normalizedRequest.url,
-      requestId,
-      mode: 'draft',
-      source: 'chrome-extension',
+    await sendDraftDownloadToDesktop({
+      sourceUrl,
+      requestIdSource: downloadId,
       referrer: typeof downloadItem.referrer === 'string' ? downloadItem.referrer : null,
-      filenameHint: extractFilenameHint(downloadItem.filename),
-      auth: normalizedRequest.auth
+      filenameHint: extractFilenameHint(downloadItem.filename)
     });
-
-    if (!accepted) {
-      throw new Error('Desktop app did not accept this download.');
-    }
 
     await safeCancelDownload(downloadId);
     await safeEraseDownload(downloadId);
@@ -444,8 +509,39 @@ async function interceptDownload(downloadItem) {
   }
 }
 
+async function handleContextMenuDownload(info: chrome.contextMenus.OnClickData, tab: chrome.tabs.Tab | undefined) {
+  if (info.menuItemId !== CONTEXT_MENU_LINK_DOWNLOAD_ID && info.menuItemId !== CONTEXT_MENU_MEDIA_DOWNLOAD_ID) {
+    return;
+  }
+
+  await refreshSettingsCache();
+
+  const sourceUrl = getContextMenuDownloadUrl(info);
+  if (!isHttpDownloadUrl(sourceUrl)) {
+    return;
+  }
+
+  try {
+    await sendDraftDownloadToDesktop({
+      sourceUrl,
+      requestIdSource: 'context-menu',
+      referrer: getTabReferrer(tab),
+      filenameHint: extractFilenameHintFromUrl(sourceUrl)
+    });
+
+    await updateStats((stats) => {
+      stats.lastError = null;
+    });
+  } catch (error) {
+    await updateStats((stats) => {
+      stats.lastError = sanitizeErrorMessage(error);
+    });
+  }
+}
+
 chrome.runtime.onInstalled.addListener(() => {
   void ensureDefaults();
+  resetContextMenus();
 });
 
 chrome.runtime.onStartup.addListener(() => {
@@ -462,6 +558,10 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
 
 chrome.downloads.onCreated.addListener((downloadItem) => {
   void interceptDownload(downloadItem);
+});
+
+chrome.contextMenus.onClicked.addListener((info, tab) => {
+  void handleContextMenuDownload(info, tab);
 });
 
 void ensureDefaults();

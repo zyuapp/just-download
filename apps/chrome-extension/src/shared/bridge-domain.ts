@@ -136,6 +136,19 @@ export function extractFilenameHint(pathLikeValue: string | null | undefined): s
   return filename && filename.trim() ? filename.trim() : null;
 }
 
+export function extractFilenameHintFromUrl(url: string | null | undefined): string | null {
+  if (typeof url !== 'string' || !url.trim()) {
+    return null;
+  }
+
+  try {
+    const parsed = new URL(url);
+    return extractFilenameHint(decodeURIComponentSafe(parsed.pathname));
+  } catch {
+    return extractFilenameHint(url);
+  }
+}
+
 export function formatTimestamp(value: number | null): string {
   if (!Number.isFinite(value)) {
     return 'Never';

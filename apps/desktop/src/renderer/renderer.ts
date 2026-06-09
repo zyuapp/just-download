@@ -2,7 +2,7 @@
 import { reconcileDownloadItems } from './download-list-reconciler.js';
 import { findTagName, getTagOptions, resolveSelectedTagId } from './download-tags.js';
 
-import type { DownloadTagSettings } from '../shared/types';
+import type { DownloadTagSettings, StartDownloadOptions } from '../shared/types';
 
 type Theme = 'dark' | 'light';
 
@@ -15,6 +15,8 @@ interface RendererState {
   downloadSpeeds: Map<string, DownloadSpeedState>;
   downloadItems: Map<string, HTMLElement>;
   contextTargetId: string | null;
+  activeDraftRequestId: string | null;
+  activeDraftUrl: string | null;
   unsubscribeDownloads: (() => void) | null;
   unsubscribeDrafts: (() => void) | null;
   theme: Theme | null;
@@ -76,6 +78,8 @@ const state: RendererState = {
   downloadSpeeds: new Map(),
   downloadItems: new Map(),
   contextTargetId: null,
+  activeDraftRequestId: null,
+  activeDraftUrl: null,
   unsubscribeDownloads: null,
   unsubscribeDrafts: null,
   theme: null
@@ -889,13 +893,17 @@ async function browseDownloadDirectory(): Promise<void> {
   }
 }
 
-function showUrlDialog(prefilledUrl = ''): void {
+function showUrlDialog(prefilledUrl = '', draftRequestId: string | null = null): void {
   if (!elements.urlDialog || !elements.urlInput || !elements.tagSelect) {
     return;
   }
 
-  if (typeof prefilledUrl === 'string' && prefilledUrl.trim()) {
-    elements.urlInput.value = prefilledUrl.trim();
+  const normalizedPrefill = typeof prefilledUrl === 'string' ? prefilledUrl.trim() : '';
+  state.activeDraftUrl = normalizedPrefill || null;
+  state.activeDraftRequestId = normalizedPrefill && draftRequestId ? draftRequestId : null;
+
+  if (normalizedPrefill) {
+    elements.urlInput.value = normalizedPrefill;
   }
 
   const selectedTagId = resolveSelectedTagId(state.downloadTagSettings, state.selectedTagId);
@@ -921,6 +929,8 @@ function hideUrlDialog(): void {
   elements.urlDialog.setAttribute('aria-hidden', 'true');
   elements.urlInput.value = '';
   elements.tagSelect.value = state.selectedTagId || '';
+  state.activeDraftRequestId = null;
+  state.activeDraftUrl = null;
   elements.addButton?.focus();
 }
 
@@ -935,10 +945,18 @@ async function startDownloadFromInput(): Promise<void> {
   }
 
   const selectedTagId = elements.tagSelect.value.trim() || null;
+  const options: StartDownloadOptions = {
+    destinationId: selectedTagId,
+    tagId: selectedTagId
+  };
+
+  if (state.activeDraftRequestId && state.activeDraftUrl === value) {
+    options.draftRequestId = state.activeDraftRequestId;
+  }
 
   try {
     elements.startButton.disabled = true;
-    await getAPI().startDownload(value, { destinationId: selectedTagId, tagId: selectedTagId });
+    await getAPI().startDownload(value, options);
     state.selectedTagId = selectedTagId;
     hideUrlDialog();
     void refreshDownloadTagSettings();
@@ -1258,7 +1276,7 @@ async function initialize(): Promise<void> {
       return;
     }
 
-    showUrlDialog(normalizedUrl);
+    showUrlDialog(normalizedUrl, typeof draft.requestId === 'string' ? draft.requestId : null);
   });
 
   getAPI().notifyRendererReady();

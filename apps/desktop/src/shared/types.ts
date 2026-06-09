@@ -54,6 +54,7 @@ export interface DownloadTagSettings {
 
 export interface StartDownloadOptions {
   auth?: unknown;
+  draftRequestId?: string | null;
   destinationId?: string | null;
   tagId?: string | null;
 }

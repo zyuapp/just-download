@@ -138,11 +138,13 @@ let partialsDir = '';
 const activeDownloads = new Map();
 const progressTimers = new Map();
 const pendingDraftRequests = [];
+const draftCredentialRequests = new Map();
 const pendingProtocolUrls = [];
 
 type DraftRequestMetadata = {
   source?: string | null;
   requestId?: string | null;
+  auth?: unknown;
 };
 
 function ensureDirectory(dirPath) {
@@ -263,21 +265,72 @@ function flushPendingDraftRequests() {
   }
 }
 
+function pruneDraftCredentialRequests() {
+  const cutoff = Date.now() - BRIDGE_REQUEST_TTL_MS;
+
+  for (const [requestId, entry] of draftCredentialRequests.entries()) {
+    if (!entry || !Number.isFinite(entry.createdAt) || entry.createdAt < cutoff) {
+      draftCredentialRequests.delete(requestId);
+    }
+  }
+
+  while (draftCredentialRequests.size > MAX_DRAFT_QUEUE_SIZE) {
+    const oldestRequestId = draftCredentialRequests.keys().next().value;
+    draftCredentialRequests.delete(oldestRequestId);
+  }
+}
+
+function rememberDraftCredentials(requestId, url, auth) {
+  if (!requestId || !auth) {
+    return;
+  }
+
+  draftCredentialRequests.set(requestId, {
+    url,
+    auth,
+    createdAt: Date.now()
+  });
+  pruneDraftCredentialRequests();
+}
+
+function readDraftCredentials(requestId, rawUrl) {
+  if (!requestId) {
+    return null;
+  }
+
+  pruneDraftCredentialRequests();
+
+  const entry = draftCredentialRequests.get(requestId);
+  const normalizedUrl = typeof rawUrl === 'string' ? rawUrl.trim() : '';
+
+  if (!entry || entry.url !== normalizedUrl) {
+    return null;
+  }
+
+  return entry.auth || null;
+}
+
 function queueDraftRequest(url, metadata: DraftRequestMetadata = {}) {
   const normalizedUrl = typeof url === 'string' ? url.trim() : '';
   if (!normalizedUrl) {
     return;
   }
 
+  const requestId = typeof metadata.requestId === 'string' && metadata.requestId ? metadata.requestId : null;
+  rememberDraftCredentials(requestId, normalizedUrl, metadata.auth || null);
+
   pendingDraftRequests.push({
     url: normalizedUrl,
     source: typeof metadata.source === 'string' && metadata.source ? metadata.source : null,
-    requestId: typeof metadata.requestId === 'string' && metadata.requestId ? metadata.requestId : null,
+    requestId,
     createdAt: Date.now()
   });
 
   while (pendingDraftRequests.length > MAX_DRAFT_QUEUE_SIZE) {
-    pendingDraftRequests.shift();
+    const removedDraft = pendingDraftRequests.shift();
+    if (removedDraft && typeof removedDraft.requestId === 'string') {
+      draftCredentialRequests.delete(removedDraft.requestId);
+    }
   }
 
   showMainWindow();
@@ -737,7 +790,12 @@ async function startDownload(rawUrl, options: unknown = {}) {
   const optionRecord = options && typeof options === 'object'
     ? options as Record<string, unknown>
     : null;
-  const authPayload = optionRecord ? optionRecord.auth || null : null;
+  const draftRequestId = optionRecord && typeof optionRecord.draftRequestId === 'string'
+    ? optionRecord.draftRequestId.trim()
+    : null;
+  const authPayload = optionRecord && optionRecord.auth
+    ? optionRecord.auth
+    : readDraftCredentials(draftRequestId, rawUrl);
   const selectedDestinationId = optionRecord && typeof optionRecord.destinationId === 'string'
     ? optionRecord.destinationId.trim()
     : (optionRecord && typeof optionRecord.tagId === 'string' ? optionRecord.tagId.trim() : null);
@@ -788,6 +846,10 @@ async function startDownload(rawUrl, options: unknown = {}) {
   persistDownloads();
   persistDownloadDestinationSettings();
   notifyDownloadsChanged();
+
+  if (draftRequestId) {
+    draftCredentialRequests.delete(draftRequestId);
+  }
 
   runDownload(record.id);
 

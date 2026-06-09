@@ -13,6 +13,7 @@ This extension intercepts Chrome downloads and opens the desktop app in a confir
 - Sends a draft handoff to `POST /v1/downloads` with `mode: "draft"`.
 - If draft handoff succeeds, cancels/removes the Chrome download entry.
 - If handoff fails at any step, resumes the original Chrome download (fail-open behavior).
+- Adds right-click menu items for HTTP/HTTPS links and media.
 
 ## Desktop app integration
 
@@ -68,6 +69,8 @@ npm run dev:desktop
 - The desktop app should open/focus.
 - The URL dialog should be prefilled.
 - Click **Download** in desktop app to confirm.
+- Right-click an HTTP/HTTPS link and choose **Download link with Just Download**.
+- Right-click an HTTP/HTTPS image, video, or audio item and choose **Download media with Just Download**.
 
 ## Monorepo scripts
 
@@ -81,6 +84,7 @@ Extension source entry points are TypeScript (`src/background.ts`, `src/options.
 ## Notes
 
 - Interception is enabled by default.
+- Right-click menu handoff remains available when auto-interception is disabled.
 - Only `http` and `https` downloads are intercepted.
 - Bridge URL and timeout can be adjusted in extension options.
 - Basic-auth URLs are supported without persisting credentials to disk.

@@ -17,6 +17,7 @@ type BridgeCacheEntry = {
 type BridgeQueueMetadata = {
   source?: string | null;
   requestId?: string | null;
+  auth?: unknown;
 };
 
 type BridgeStartOptions = {
@@ -242,7 +243,8 @@ function handleDraftBridgeRequest(
 ): void {
   config.queueDraftRequest(normalizedUrl, {
     source: payload.source || 'bridge',
-    requestId: payload.requestId || null
+    requestId: payload.requestId || null,
+    auth: payload.auth || null
   });
 
   rememberBridgeRequest(payload, requestCache, BRIDGE_MODE_DRAFT, null);
