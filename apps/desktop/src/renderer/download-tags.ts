@@ -2,4 +2,4 @@ export {
   findTagName,
   getTagOptions,
   resolveSelectedTagId
-} from './download-destinations';
+} from './download-destinations.js';
