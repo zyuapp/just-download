@@ -36,6 +36,7 @@ interface DownloadTagBadge {
 
 interface ElementsState {
   addButton: HTMLButtonElement | null;
+  emptyAddButton: HTMLButtonElement | null;
   manageDestinationsButton: HTMLButtonElement | null;
   settingsToggleButton: HTMLButtonElement | null;
   settingsPanel: HTMLElement | null;
@@ -62,6 +63,7 @@ interface ElementsState {
   cancelButton: HTMLButtonElement | null;
   downloadList: HTMLElement | null;
   emptyState: HTMLElement | null;
+  queueCount: HTMLElement | null;
   contextMenu: HTMLElement | null;
   themeToggle: HTMLButtonElement | null;
 }
@@ -87,6 +89,7 @@ const state: RendererState = {
 
 const elements: ElementsState = {
   addButton: null,
+  emptyAddButton: null,
   manageDestinationsButton: null,
   settingsToggleButton: null,
   settingsPanel: null,
@@ -113,6 +116,7 @@ const elements: ElementsState = {
   cancelButton: null,
   downloadList: null,
   emptyState: null,
+  queueCount: null,
   contextMenu: null,
   themeToggle: null
 };
@@ -120,14 +124,10 @@ const elements: ElementsState = {
 const THEME_DARK: Theme = 'dark';
 const THEME_LIGHT: Theme = 'light';
 const THEME_STORAGE_KEY = 'just-download:theme';
-const DEFAULT_THEME: Theme = THEME_DARK;
+const DEFAULT_THEME: Theme = THEME_LIGHT;
 const SPEED_SMOOTHING_FACTOR = 0.35;
 
-const DOWNLOAD_ITEM_BASE_CLASS = 'download-item rounded-[12px] border border-[var(--border)] bg-[var(--surface-strong)] p-[13px] shadow-[var(--shadow-card)] transition-[border-color,background-color] duration-150 ease-out hover:border-[var(--border-strong)] hover:bg-[var(--surface-hover)]';
-const DOWNLOAD_INFO_CLASS = 'mb-[7px] flex items-start justify-between gap-[10px] max-[760px]:flex-col max-[760px]:items-start';
-const FILENAME_CLASS = 'flex-1 break-words text-[14px] font-[620] text-[var(--text-title)]';
-const PROGRESS_TRACK_CLASS = 'h-[9px] overflow-hidden rounded-full border border-[color-mix(in_srgb,var(--border)_76%,transparent)] bg-[var(--progress-track)]';
-const PROGRESS_TEXT_CLASS = 'mt-[6px] text-[11px] uppercase tracking-[0.04em] text-[var(--text-faint)]';
+const DOWNLOAD_ITEM_BASE_CLASS = 'download-item';
 const ACTION_KEY_SEPARATOR = ':';
 
 type DownloadAction = 'pause' | 'resume' | 'cancel';
@@ -377,7 +377,7 @@ function getActionsMarkup(download: DownloadRecord): string {
     `;
 
   return `
-    <div data-role="download-actions" class="mt-[11px] flex gap-2">
+    <div data-role="download-actions" class="download-actions">
       ${pauseOrResume}
       <button class="action-btn" data-action="cancel" title="Cancel">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -474,10 +474,11 @@ function updateDownloadingItemContent(
   const statusChipElement = item.querySelector<HTMLElement>('[data-role="status-chip"]');
   const progressFillElement = item.querySelector<HTMLElement>('[data-role="progress-fill"]');
   const progressTextElement = item.querySelector<HTMLElement>('[data-role="progress-text"]');
+  const progressPercentElement = item.querySelector<HTMLElement>('[data-role="progress-percent"]');
   const tagBadgeElement = item.querySelector<HTMLElement>('[data-role="tag-badge"]');
   const actionsElement = item.querySelector<HTMLElement>('[data-role="download-actions"]');
 
-  if (!filenameElement || !statusChipElement || !progressFillElement || !progressTextElement) {
+  if (!filenameElement || !statusChipElement || !progressFillElement || !progressTextElement || !progressPercentElement) {
     return false;
   }
 
@@ -491,6 +492,7 @@ function updateDownloadingItemContent(
   progressFillElement.style.width = `${progress}%`;
 
   progressTextElement.textContent = `${progressLabel}${speedLabel}`;
+  progressPercentElement.textContent = `${progress}%`;
 
   if (tagName && tagBadgeElement) {
     tagBadgeElement.textContent = tagName;
@@ -536,15 +538,26 @@ function updateDownloadItem(item: HTMLElement, download: DownloadRecord): void {
   }
 
   item.innerHTML = `
-    <div class="${DOWNLOAD_INFO_CLASS}">
-      <span data-role="filename" class="${FILENAME_CLASS}" title="${escapeHtml(download.filename)}">${escapeHtml(download.filename)}</span>
+    <div class="download-info">
+      <div class="download-file-lockup">
+        <span class="download-file-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+            <path d="M7 3h7l4 4v14H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2Z"></path>
+            <path d="M14 3v5h5"></path>
+          </svg>
+        </span>
+        <div class="download-file-copy">
+          <span data-role="filename" class="download-filename" title="${escapeHtml(download.filename)}">${escapeHtml(download.filename)}</span>
+          <div data-role="progress-text" class="download-progress-text">${progressLabel}${speedLabel}</div>
+        </div>
+      </div>
       <span data-role="status-chip" class="status-chip" data-status="${statusValue}">${statusLabel(download)}</span>
     </div>
-    <div class="mt-[8px]">
-      <div class="${PROGRESS_TRACK_CLASS}">
+    <div class="progress-row">
+      <div class="progress-track">
         <div data-role="progress-fill" class="progress-fill" data-status="${statusValue}" style="width: ${progress}%"></div>
       </div>
-      <div data-role="progress-text" class="${PROGRESS_TEXT_CLASS}">${progressLabel}${speedLabel}</div>
+      <div data-role="progress-percent" class="progress-percent">${progress}%</div>
     </div>
     ${tagBadge.markup}
     ${errorText}
@@ -607,6 +620,11 @@ function renderDownloads(): void {
   }
 
   const sorted = [...state.downloads].sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+  const fileLabel = sorted.length === 1 ? 'file' : 'files';
+
+  if (elements.queueCount) {
+    elements.queueCount.textContent = `${sorted.length} ${fileLabel}`;
+  }
   const sortedIds = new Set(sorted.map((download) => download.id));
 
   for (const [downloadId, item] of state.downloadItems) {
@@ -776,6 +794,9 @@ function renderTagSelectOptions(): void {
 
   elements.tagSelect.innerHTML = `<option value="">System Downloads</option>${options}`;
   elements.tagSelect.value = selectedTagId || '';
+  const hasCustomDestinations = state.downloadTagSettings.tags.length > 0;
+  elements.tagSelect.disabled = !hasCustomDestinations;
+  elements.tagSelect.dataset.static = hasCustomDestinations ? 'false' : 'true';
 }
 
 function applyDownloadTagSettings(settings: unknown): void {
@@ -893,6 +914,23 @@ async function browseDownloadDirectory(): Promise<void> {
   }
 }
 
+function isUsableDownloadUrl(value: string): boolean {
+  try {
+    const url = new URL(value.trim());
+    return url.protocol === 'http:' || url.protocol === 'https:';
+  } catch (_error) {
+    return false;
+  }
+}
+
+function syncStartButtonState(): void {
+  if (!elements.startButton || !elements.urlInput) {
+    return;
+  }
+
+  elements.startButton.disabled = !isUsableDownloadUrl(elements.urlInput.value);
+}
+
 function showUrlDialog(prefilledUrl = '', draftRequestId: string | null = null): void {
   if (!elements.urlDialog || !elements.urlInput || !elements.tagSelect) {
     return;
@@ -909,6 +947,7 @@ function showUrlDialog(prefilledUrl = '', draftRequestId: string | null = null):
   const selectedTagId = resolveSelectedTagId(state.downloadTagSettings, state.selectedTagId);
   state.selectedTagId = selectedTagId;
   elements.tagSelect.value = selectedTagId || '';
+  syncStartButtonState();
 
   elements.urlDialog.classList.remove('hidden');
   elements.urlDialog.setAttribute('aria-hidden', 'false');
@@ -929,6 +968,7 @@ function hideUrlDialog(): void {
   elements.urlDialog.setAttribute('aria-hidden', 'true');
   elements.urlInput.value = '';
   elements.tagSelect.value = state.selectedTagId || '';
+  syncStartButtonState();
   state.activeDraftRequestId = null;
   state.activeDraftUrl = null;
   elements.addButton?.focus();
@@ -940,7 +980,8 @@ async function startDownloadFromInput(): Promise<void> {
   }
 
   const value = elements.urlInput.value.trim();
-  if (!value) {
+  if (!isUsableDownloadUrl(value)) {
+    syncStartButtonState();
     return;
   }
 
@@ -964,7 +1005,7 @@ async function startDownloadFromInput(): Promise<void> {
     const message = error instanceof Error ? error.message : 'Unable to start download.';
     window.alert(message);
   } finally {
-    elements.startButton.disabled = false;
+    syncStartButtonState();
   }
 }
 
@@ -1024,6 +1065,7 @@ async function refreshDownloads(): Promise<void> {
 function hasRequiredElements(): boolean {
   const required = [
     elements.addButton,
+    elements.emptyAddButton,
     elements.manageDestinationsButton,
     elements.settingsToggleButton,
     elements.settingsPanel,
@@ -1049,7 +1091,8 @@ function hasRequiredElements(): boolean {
     elements.tagSelect,
     elements.themeToggle,
     elements.urlInput,
-    elements.contextMenu
+    elements.contextMenu,
+    elements.queueCount
   ];
 
   return required.every(Boolean);
@@ -1058,6 +1101,9 @@ function hasRequiredElements(): boolean {
 // eslint-disable-next-line complexity
 function bindPrimaryControls(): void {
   elements.addButton?.addEventListener('click', () => {
+    showUrlDialog();
+  });
+  elements.emptyAddButton?.addEventListener('click', () => {
     showUrlDialog();
   });
   elements.manageDestinationsButton?.addEventListener('click', () => {
@@ -1081,6 +1127,13 @@ function bindPrimaryControls(): void {
   });
   elements.themeToggle?.addEventListener('click', toggleTheme);
 
+  document.addEventListener('keydown', (event: KeyboardEvent) => {
+    if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'n') {
+      event.preventDefault();
+      showUrlDialog();
+    }
+  });
+
   elements.urlInput?.addEventListener('keydown', (event: KeyboardEvent) => {
     if (event.key === 'Enter') {
       void startDownloadFromInput();
@@ -1095,6 +1148,8 @@ function bindPrimaryControls(): void {
     event.stopPropagation();
     hideUrlDialog();
   });
+
+  elements.urlInput?.addEventListener('input', syncStartButtonState);
 
   elements.tagSelect?.addEventListener('change', () => {
     state.selectedTagId = elements.tagSelect?.value.trim() || null;
@@ -1218,6 +1273,7 @@ function bindEvents(): void {
 
 function cacheElements(): void {
   elements.addButton = document.getElementById('add-btn') as HTMLButtonElement | null;
+  elements.emptyAddButton = document.getElementById('empty-add-btn') as HTMLButtonElement | null;
   elements.manageDestinationsButton = document.getElementById('manage-destinations') as HTMLButtonElement | null;
   elements.settingsToggleButton = document.getElementById('settings-toggle') as HTMLButtonElement | null;
   elements.settingsPanel = document.getElementById('settings-panel');
@@ -1244,6 +1300,7 @@ function cacheElements(): void {
   elements.cancelButton = document.getElementById('cancel-dialog') as HTMLButtonElement | null;
   elements.downloadList = document.getElementById('download-list');
   elements.emptyState = document.getElementById('empty-state');
+  elements.queueCount = document.getElementById('queue-count');
   elements.contextMenu = document.getElementById('context-menu');
   elements.themeToggle = document.getElementById('theme-toggle') as HTMLButtonElement | null;
 }
